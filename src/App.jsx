@@ -43,7 +43,7 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-const STORAGE_KEY_PROJECT = 'winter_schedule_project_v37';
+const STORAGE_KEY_PROJECT = 'winter_schedule_project_v36';
 
 export default function ScheduleApp() {
   const [project, setProject] = useState(() => {
@@ -140,6 +140,7 @@ export default function ScheduleApp() {
           }
           if (entry && entry.teacher && entry.teacher !== "未定") {
             const usageKey = `${d}-${p}-${entry.teacher}`;
+            // 自分自身以外の使用実績があれば重複
             if ((globalUsage[usageKey] || []).length > 1) {
               conflictMap[`${d}-${p}-${entry.teacher}`] = true;
               errorKeys.push(key);
@@ -282,57 +283,56 @@ export default function ScheduleApp() {
     return { ...proj, tabs: newTabs };
   };
 
-  const handleClearUnlocked = () => { if(window.confirm("ロックされていないセルを全てクリアしますか？")) { const ns={}; Object.keys(currentSchedule).forEach(k=>{if(currentSchedule[k].locked)ns[k]=currentSchedule[k]}); const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t); pushHistory({ ...project, tabs: newTabs }); }};
+  const handleClearUnlocked = () => { if(window.confirm("ロックされていないセル（生成結果など）を全てクリアしますか？")) { const ns={}; Object.keys(currentSchedule).forEach(k=>{if(currentSchedule[k].locked)ns[k]=currentSchedule[k]}); const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t); pushHistory({ ...project, tabs: newTabs }); }};
   const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); window.location.reload(); }};
   const applyPattern = (pat) => { const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t); pushHistory({ ...project, tabs: newTabs }); setGeneratedPatterns([]); };
   const handleLoadJson = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{try{const data=JSON.parse(ev.target.result); pushHistory(cleanSchedule(data)); alert("読込完了");}catch{alert("エラー");}}; r.readAsText(f); e.target.value=''; };
-  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v37.json`; a.click(); };
+  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v36.json`; a.click(); };
 
-  // ★ v37: 原点回帰 & マルチタブ対応ロジック
+  // v36: 修正版自動生成 (Crash対策)
   const generateSchedule = () => {
+    // 1. Diagnosis
+    const issues = [];
+    const neededCounts = {}; 
+    commonSubjects.forEach(s => { neededCounts[s] = (currentConfig.subjectCounts[s] || 0) * currentConfig.classes.length; });
+    Object.values(currentSchedule).forEach(e => { if (e.subject && neededCounts[e.subject] > 0) neededCounts[e.subject]--; });
+    const availableCounts = {}; commonSubjects.forEach(s => availableCounts[s] = 0);
+    project.teachers.forEach(t => {
+      if (t.name === "未定") return;
+      t.subjects.forEach(s => {
+        if (availableCounts[s] !== undefined) {
+          currentConfig.dates.forEach(d => {
+            const dayKey = `${d}-${t.name}`;
+            const ext = project.externalCounts?.[dayKey] || 0;
+            const remaining = Math.max(0, 4 - ext); 
+            availableCounts[s] += remaining;
+          });
+        }
+      });
+    });
+    commonSubjects.forEach(s => { if (neededCounts[s] > availableCounts[s]) issues.push(`・${s}: 残り${neededCounts[s]}コマ必要ですが、空き枠概算は${availableCounts[s]}です。`); });
+    if (issues.length > 0) alert(`【⚠️ 自動作成できない可能性が高いです】\n\n講師の空きコマが不足しているようです：\n${issues.join("\n")}\n\n※外部負荷(他学年)を減らすか、講師を追加してください。`);
+
     setIsGenerating(true);
     setTimeout(() => {
-      // 1. 他タブの負荷状況を事前計算（定数として扱う）
-      const baseDailyCounts = {}; // { "12/25-堀上": 3 }
-      project.teachers.forEach(t => {
-        currentConfig.dates.forEach(d => {
-          const key = `${d}-${t.name}`;
-          const ext = project.externalCounts?.[key] || 0;
-          let otherTabCount = 0;
-          project.tabs.forEach(tab => {
-            if (tab.id === project.activeTabId) return; // 自分以外のタブ
-            Object.values(tab.schedule).forEach(e => {
-              // 簡易チェック: 別タブでも同じ日付文字列を含んでいればカウント
-              if (e.teacher === t.name && e.teacher !== "未定") {
-                // 注: 正確にはkeyから日付をパースすべきだが、簡易的にconfig.datesと照合
-                // v37では安全のため「外部入力値」をベースにする
-                // ※もし他タブの日付文字列が完全に一致するならここでカウントすべきだが、
-                // 構成が違う可能性もあるため、今回は「外部入力値(externalCounts)」を正とする運用を推奨。
-                // ただし、もし自動連携したい場合はここで加算する。
-                // ここでは安全策として、externalCountsを正として扱う実装にする。
-              }
-            });
-          });
-          baseDailyCounts[key] = ext; 
-        });
-      });
-
-      const solutions = []; 
-      const slots = [];
-      const currentCounts = {}; 
+      const solutions = []; const slots = [];
+      // ★ Crash Fix: counts配列の初期化を確実に行う
+      const counts = {}; 
       currentConfig.classes.forEach(c => { 
-        currentCounts[c] = {}; 
-        commonSubjects.forEach(s => currentCounts[c][s] = 0); 
+        counts[c] = {}; 
+        commonSubjects.forEach(s => counts[c][s] = 0); 
       });
 
-      // 現在のスケジュール状況をロード
+      // ★ Crash Fix: 存在しないクラスのデータはスキップ
       Object.keys(currentSchedule).forEach(k => { 
         const e = currentSchedule[k]; 
         if (e?.subject) {
           const parts = k.split('-');
-          if(parts.length >= 3) {
+          if (parts.length >= 3) {
             const cls = parts[2];
-            if(currentCounts[cls]) currentCounts[cls][e.subject] = (currentCounts[cls][e.subject] || 0) + 1;
+            if (counts[cls] && counts[cls][e.subject] !== undefined) {
+              counts[cls][e.subject]++;
+            }
           }
         }
       });
@@ -341,67 +341,56 @@ export default function ScheduleApp() {
         const k=`${d}-${p}-${c}`;
         const entry = currentSchedule[k];
         if (!entry || !entry.subject || !entry.teacher) {
-          slots.push({d, p, c, k, fixedSubject: entry?.subject});
+          const fixedSubject = entry?.subject;
+          let candidates = 0;
+          const subjectsToCheck = fixedSubject ? [fixedSubject] : commonSubjects;
+          subjectsToCheck.forEach(s => {
+            if(!fixedSubject && (counts[c][s] || 0) >= currentConfig.subjectCounts[s]) return;
+            const validT = project.teachers.filter(t => t.subjects.includes(s) && !t.ngSlots?.includes(`${d}-${p}`) && !t.ngClasses?.includes(c));
+            candidates += validT.length;
+          });
+          slots.push({d, p, c, k, fixedSubject, candidates});
         }
       })));
       
-      // ランダムにシャッフル（これが「野生の勘」）
-      slots.sort(() => Math.random() - 0.5);
+      slots.sort((a, b) => a.candidates - b.candidates);
 
-      const solve = (idx, tempSch, tempCnt, tempDaily, iter={c:0}) => {
-        if (iter.c++ > 500000 || solutions.length >= 1) return; // 1つ見つかればOKとする（高速化）
-        if (idx >= slots.length) { solutions.push(JSON.parse(JSON.stringify(tempSch))); return; }
-        
+      let bestResult = null; let maxFilled = -1;
+      const solve = (idx, tempSch, tempCnt, iter={c:0}) => {
+        if (idx > maxFilled) { maxFilled = idx; bestResult = JSON.parse(JSON.stringify(tempSch)); }
+        if (iter.c++ > 30000) return; 
+        if (idx >= slots.length) return; 
         const {d, p, c, k, fixedSubject} = slots[idx];
         const subjectsToTry = fixedSubject ? [fixedSubject] : commonSubjects.sort(() => Math.random() - 0.5);
-
         for (const s of subjectsToTry) {
           if (!fixedSubject && (tempCnt[c][s]||0) >= currentConfig.subjectCounts[s]) continue;
           if (!fixedSubject && currentConfig.periods.some(per => tempSch[`${d}-${per}-${c}`]?.subject === s)) continue;
-          
-          const validT = project.teachers.filter(t => t.subjects.includes(s) && !t.ngSlots?.includes(`${d}-${p}`) && !t.ngClasses?.includes(c));
-          // ランダム性
-          const shuffledT = [...validT].sort(() => Math.random() - 0.5);
-
-          for (const tObj of shuffledT) {
-             const tName = tObj.name;
-             const dayKey = `${d}-${tName}`;
-             const currentLoad = (baseDailyCounts[dayKey] || 0) + (tempDaily[dayKey] || 0);
-             
-             // 1日4コマ制限 (ここを緩めると埋まりやすくなる)
-             if (currentLoad >= 4) continue;
-
-             // 同時刻重複チェック
-             if (currentConfig.classes.some(oc => oc!==c && tempSch[`${d}-${p}-${oc}`]?.teacher===tName)) continue;
-
-             // 割り当て
-             tempSch[k] = { subject: s, teacher: tName }; 
-             if(!fixedSubject) tempCnt[c][s]++;
-             if(!tempDaily[dayKey]) tempDaily[dayKey]=0; tempDaily[dayKey]++;
-             
-             solve(idx+1, tempSch, tempCnt, tempDaily, iter);
-             if (solutions.length>=1) return;
-             
-             // バックトラック
-             if(fixedSubject) tempSch[k] = { subject: fixedSubject, teacher: "" };
-             else { delete tempSch[k]; tempCnt[c][s]--; }
-             tempDaily[dayKey]--;
+          const validT = project.teachers.filter(t => t.subjects.includes(s) && !t.ngClasses?.includes(c) && !t.ngSlots?.includes(`${d}-${p}`));
+          let availT = validT.map(t => {
+             const dayKey = `${d}-${t.name}`;
+             const ext = analysis.teacherDailyCounts[dayKey]?.external || 0;
+             const currentTabCount = analysis.teacherDailyCounts[dayKey]?.current || 0; 
+             return { teacher: t, load: ext + currentTabCount };
+          }).filter(item => item.load < 5); 
+          availT = availT.filter(t => !currentConfig.classes.some(oc => oc !== c && tempSch[`${d}-${p}-${oc}`]?.teacher === t.teacher.name));
+          if (availT.length > 0) {
+            const tObj = availT[Math.floor(Math.random() * availT.length)];
+            tempSch[k] = { subject: s, teacher: tObj.teacher.name }; 
+            if(!fixedSubject) tempCnt[c][s]++;
+            solve(idx+1, tempSch, tempCnt, iter);
+            if (maxFilled === slots.length) return;
+            if(fixedSubject) tempSch[k] = { subject: fixedSubject, teacher: "" }; else { delete tempSch[k]; tempCnt[c][s]--; }
           }
         }
+        if (iter.c < 30000) solve(idx + 1, tempSch, tempCnt, iter);
       };
       
-      // 探索用の一時オブジェクト
-      const initialDaily = {}; // 探索中に増えた分だけ管理
-      
-      solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(currentCounts)), initialDaily);
-      
-      if (solutions.length > 0) {
-        setGeneratedPatterns(solutions);
+      solve(0, JSON.parse(JSON.stringify(currentSchedule)), JSON.parse(JSON.stringify(counts)));
+      if (bestResult) {
+        setGeneratedPatterns([bestResult]);
+        if (maxFilled < slots.length) alert(`条件が厳しく、全てのコマを埋めることはできませんでした。\n可能な限り埋めた案（${Math.round(maxFilled/slots.length*100)}%）を提示します。`);
       } else {
-        // 解けなかった場合、無理やり埋める「ベストエフォート」モード発動
-        alert("完全なパターンが見つかりませんでした。\n条件を緩和して、可能な範囲で埋めた案を提示します。");
-        // ここで再度、制約を無視してでも埋める処理を入れることも可能だが、
-        // 今回はまず「シンプルロジック」での成功率向上を優先。
+        alert("有効なパターンが見つかりませんでした。");
       }
       setIsGenerating(false);
     }, 100);
@@ -451,7 +440,7 @@ export default function ScheduleApp() {
       <style>{printStyle}</style>
 
       <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
-        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v37</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
+        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v36</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
         <div className="flex gap-2">
           <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold">💾 プロジェクト保存</button>
           <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
