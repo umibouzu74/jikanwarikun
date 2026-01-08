@@ -114,6 +114,7 @@ export default function ScheduleApp() {
     }
   }, []);
 
+  // キーボードショートカット (Undo/Redo)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -128,6 +129,48 @@ export default function ScheduleApp() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [history, historyIndex]);
+
+  // ★ v23: セル間移動ロジック
+  const handleCellNavigation = (e, dIndex, pIndex, cIndex, type) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault(); // デフォルトの選択変更を防ぐ
+
+      let nextD = dIndex;
+      let nextP = pIndex;
+      let nextC = cIndex;
+      let nextType = type;
+
+      if (e.key === 'ArrowUp') {
+        if (pIndex > 0) nextP--;
+        else if (dIndex > 0) {
+          nextD--;
+          nextP = config.periods.length - 1;
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (pIndex < config.periods.length - 1) nextP++;
+        else if (dIndex < config.dates.length - 1) {
+          nextD++;
+          nextP = 0;
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (type === 'teacher') nextType = 'subject';
+        else if (cIndex > 0) {
+          nextC--;
+          nextType = 'teacher';
+        }
+      } else if (e.key === 'ArrowRight') {
+        if (type === 'subject') nextType = 'teacher';
+        else if (cIndex < config.classes.length - 1) {
+          nextC++;
+          nextType = 'subject';
+        }
+      }
+
+      const nextId = `select-${nextD}-${nextP}-${nextC}-${nextType}`;
+      const nextElement = document.getElementById(nextId);
+      if (nextElement) nextElement.focus();
+    }
+  };
 
   const handleContextMenu = (e, date, period, cls) => {
     e.preventDefault();
@@ -212,17 +255,15 @@ export default function ScheduleApp() {
   const toggleTeacherNg = (i, d, pd) => setConfig(p => { const t = [...p.teachers]; const k=`${d}-${pd}`; if (!t[i].ngSlots) t[i].ngSlots=[]; if(t[i].ngSlots.includes(k)) t[i].ngSlots=t[i].ngSlots.filter(v=>v!==k); else t[i].ngSlots.push(k); return { ...p, teachers: t }; });
   const removeTeacher = (i) => { if(window.confirm("削除しますか？")) setConfig(p => ({ ...p, teachers: p.teachers.filter((_, idx) => idx !== i) })); };
 
-  // 分析ロジック (★ v22: エラーキーの抽出機能追加)
-  const analysis = useMemo(() => {
+  const analyzeSchedule = (currentSchedule) => {
     const conflictMap = {}; const subjectOrders = {}; const dailySubjectMap = {};
-    const errorKeys = []; // エラーが発生しているセルのキーリスト
+    const errorKeys = [];
     const sortedKeys = [];
     config.dates.forEach(d => config.periods.forEach(p => config.classes.forEach(c => sortedKeys.push({ d, p, c, key: `${d}-${p}-${c}` }))));
-    
     config.classes.forEach(c => {
       const counts = {};
       sortedKeys.filter(k => k.c === c).forEach(({ d, p, key }) => {
-        const e = schedule[key];
+        const e = currentSchedule[key];
         if (!e || !e.subject) return;
         counts[e.subject] = (counts[e.subject] || 0) + 1;
         subjectOrders[key] = counts[e.subject];
@@ -232,21 +273,18 @@ export default function ScheduleApp() {
     });
     config.dates.forEach(d => config.periods.forEach(p => {
       const tc = {};
-      config.classes.forEach(c => { const t = schedule[`${d}-${p}-${c}`]?.teacher; if (t && t !== "未定") tc[t] = (tc[t] || 0) + 1; });
+      config.classes.forEach(c => { const t = currentSchedule[`${d}-${p}-${c}`]?.teacher; if (t && t !== "未定") tc[t] = (tc[t] || 0) + 1; });
       Object.keys(tc).forEach(t => { 
         if (tc[t] > 1) {
           conflictMap[`${d}-${p}-${t}`] = true; 
-          // 該当するセルのキーをエラーリストに追加
-          config.classes.forEach(c => {
-             if (schedule[`${d}-${p}-${c}`]?.teacher === t) errorKeys.push(`${d}-${p}-${c}`);
-          });
+          config.classes.forEach(c => { if (schedule[`${d}-${p}-${c}`]?.teacher === t) errorKeys.push(`${d}-${p}-${c}`); });
         }
       });
     }));
     return { conflictMap, subjectOrders, dailySubjectMap, errorKeys };
-  }, [schedule, config]);
+  };
+  const analysis = useMemo(() => analyzeSchedule(schedule), [schedule, config]);
 
-  // ★ v22: ダッシュボード計算
   const dashboard = useMemo(() => {
     const totalRequired = Object.values(config.subjectCounts).reduce((a, b) => a + b, 0) * config.classes.length;
     let filledCount = 0;
@@ -255,13 +293,11 @@ export default function ScheduleApp() {
     return { progress, filledCount, totalRequired };
   }, [schedule, config]);
 
-  // ★ v22: エラー箇所へスクロール
   const scrollToFirstError = () => {
     if (analysis.errorKeys.length > 0) {
       const element = document.getElementById(analysis.errorKeys[0]);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // 一瞬ピカッとさせる演出
         element.classList.add("ring-4", "ring-red-500");
         setTimeout(() => element.classList.remove("ring-4", "ring-red-500"), 1000);
       }
@@ -381,7 +417,7 @@ export default function ScheduleApp() {
     if (pRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pRows), "個人別");
     XLSX.writeFile(wb, `時間割_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
-  const handleSaveJson = () => { const blob = new Blob([JSON.stringify({ version: 22, config, schedule }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `schedule_v22.json`; link.click(); };
+  const handleSaveJson = () => { const blob = new Blob([JSON.stringify({ version: 23, config, schedule }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `schedule_v23.json`; link.click(); };
 
   const printStyle = `
     @media print {
@@ -401,45 +437,19 @@ export default function ScheduleApp() {
 
       {/* ヘッダー・ボタン群 */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 no-print">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v22</h1>
-          <p className="text-sm text-gray-600">進捗ダッシュボード＆エラージャンプ</p>
-        </div>
+        <div><h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v23</h1><p className="text-sm text-gray-600">キーボード操作対応版</p></div>
         
-        {/* ★ v22: ダッシュボード (中央に配置) */}
         <div className="flex items-center gap-4 bg-white p-2 rounded shadow border px-4 flex-1 justify-center max-w-2xl mx-auto">
-           {/* 進捗バー */}
-           <div className="flex flex-col w-32">
-             <div className="flex justify-between text-xs mb-1 font-bold text-gray-600">
-               <span>進捗: {dashboard.progress}%</span>
-               <span>{dashboard.filledCount}/{dashboard.totalRequired}</span>
-             </div>
-             <div className="h-2 bg-gray-200 rounded overflow-hidden">
-               <div className="h-full bg-green-500 rounded transition-all duration-500" style={{width: `${dashboard.progress}%`}}></div>
-             </div>
-           </div>
-           
-           {/* エラーバッジ */}
+           <div className="flex flex-col w-32"><div className="flex justify-between text-xs mb-1 font-bold text-gray-600"><span>進捗: {dashboard.progress}%</span><span>{dashboard.filledCount}/{dashboard.totalRequired}</span></div><div className="h-2 bg-gray-200 rounded overflow-hidden"><div className="h-full bg-green-500 rounded transition-all duration-500" style={{width: `${dashboard.progress}%`}}></div></div></div>
            {analysis.errorKeys.length > 0 ? (
-             <button onClick={scrollToFirstError} className="flex items-center gap-1 text-xs bg-red-100 text-red-600 px-3 py-2 rounded-full font-bold hover:bg-red-200 animate-pulse transition-colors border border-red-200" title="クリックして最初のエラーへ移動">
-               ⚠️ 重複 {analysis.errorKeys.length}件
-             </button>
-           ) : (
-             <div className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-full font-bold border border-green-200">
-               ✨ エラーなし
-             </div>
-           )}
+             <button onClick={scrollToFirstError} className="flex items-center gap-1 text-xs bg-red-100 text-red-600 px-3 py-2 rounded-full font-bold hover:bg-red-200 animate-pulse transition-colors border border-red-200" title="クリックして最初のエラーへ移動">⚠️ 重複 {analysis.errorKeys.length}件</button>
+           ) : (<div className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-full font-bold border border-green-200">✨ エラーなし</div>)}
         </div>
 
         <div className="flex items-center gap-2">
            <span className="text-xs text-green-600 font-bold mr-2">{saveStatus}</span>
-           <button onClick={() => setIsCompact(!isCompact)} className={`px-3 py-2 rounded shadow border ${isCompact ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "bg-white text-gray-600 border-gray-300"}`} title="表示サイズ切替">
-             {isCompact ? "🔍 標準" : "📏 縮小"}
-           </button>
-           <div className="flex bg-white rounded shadow border border-gray-300 mr-2">
-             <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30 border-r">↩️</button>
-             <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30">↪️</button>
-           </div>
+           <button onClick={() => setIsCompact(!isCompact)} className={`px-3 py-2 rounded shadow border ${isCompact ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "bg-white text-gray-600 border-gray-300"}`} title="表示サイズ切替">{isCompact ? "🔍 標準" : "📏 縮小"}</button>
+           <div className="flex bg-white rounded shadow border border-gray-300 mr-2"><button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30 border-r">↩️</button><button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30">↪️</button></div>
            <button onClick={handleDownloadExcel} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800 shadow">📊 Excel</button>
            <button onClick={handleClearUnlocked} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow">🗑️ 削除</button>
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow">📊 集計</button>
@@ -482,14 +492,13 @@ export default function ScheduleApp() {
         </div>
       )}
       
-      {/* メインテーブル */}
       <div className={`overflow-auto shadow-lg rounded-lg border border-gray-300 max-h-[80vh] print-container ${isCompact ? "text-xs" : "text-sm"}`}>
         <table className="border-collapse w-full bg-white text-left relative">
           <thead className="sticky top-0 z-30 bg-gray-800 text-white shadow-md">
             <tr><th className={`border-r border-gray-600 sticky left-0 z-40 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>日付</th><th className={`border-r border-gray-600 sticky left-24 z-30 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>時限</th>{config.classes.map(cls => <th key={cls} className={`border-r border-gray-600 last:border-0 ${isCompact ? "p-1 min-w-[100px]" : "p-3 min-w-[150px]"}`}>{cls}</th>)}</tr>
           </thead>
           <tbody>
-            {config.dates.map(date => (
+            {config.dates.map((date, dIndex) => (
               config.periods.map((period, pIndex) => {
                 const isDayEnd = pIndex === config.periods.length - 1;
                 const borderClass = isDayEnd ? "border-b-4 border-gray-400" : "border-b hover:bg-gray-50";
@@ -497,7 +506,7 @@ export default function ScheduleApp() {
                   <tr key={`${date}-${period}`} className={borderClass}>
                     {pIndex === 0 && <td rowSpan={config.periods.length} className={`font-bold align-top bg-gray-100 border-r sticky left-0 z-20 shadow-sm border-b-4 border-gray-400 ${isCompact ? "p-1" : "p-3"}`}>{date}</td>}
                     <td className={`border-r bg-gray-50 text-gray-700 sticky left-24 z-10 shadow-sm ${isDayEnd ? "border-b-4 border-gray-400" : ""} ${isCompact ? "p-1" : "p-3"}`}>{period}</td>
-                    {config.classes.map(cls => {
+                    {config.classes.map((cls, cIndex) => {
                       const key = `${date}-${period}-${cls}`;
                       const currentData = schedule[key] || {};
                       const currentSubject = currentData.subject || "";
@@ -518,14 +527,28 @@ export default function ScheduleApp() {
                           <div className={`flex flex-col rounded ${borderColor} ${cellBgColor} ${isLocked ? "bg-opacity-100 shadow-inner" : "bg-opacity-90"} ${isDimmed ? "opacity-25 grayscale" : "transition-opacity"} ${isCompact ? "gap-0 p-1" : "gap-2 p-2"}`}>
                             <div className="flex justify-between items-start">
                                <div className="relative flex-1">
-                                  <select className={`w-full font-medium focus:outline-none cursor-pointer appearance-none bg-transparent ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} ${isLocked ? "pointer-events-none" : ""}`} onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)} value={currentSubject}>
+                                  {/* ★ v23: キーボード操作用のID付与とイベントハンドラ */}
+                                  <select 
+                                    id={`select-${dIndex}-${pIndex}-${cIndex}-subject`}
+                                    className={`w-full font-medium focus:outline-none cursor-pointer appearance-none bg-transparent ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} ${isLocked ? "pointer-events-none" : ""}`} 
+                                    onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)} 
+                                    value={currentSubject}
+                                    onKeyDown={(e) => handleCellNavigation(e, dIndex, pIndex, cIndex, 'subject')}
+                                  >
                                     <option value="">-</option>{config.subjects.map(s => <option key={s} value={s} disabled={analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0 && currentSubject !== s} className={analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0 && currentSubject !== s ? "bg-gray-200" : ""}>{s}</option>)}
                                   </select>
                                   {currentSubject && <div className={`absolute right-0 top-0 px-1 rounded pointer-events-none ${isCountOver ? "bg-red-500 text-white" : "bg-white/80 text-blue-800 border"} ${isCompact ? "text-[10px]" : "text-xs"}`}>{toCircleNum(order)}{isCountOver&&"⚠"}</div>}
                                </div>
                                <button onClick={() => toggleLock(date, period, cls)} className="ml-1 focus:outline-none hover:scale-110" title="ロック">{isLocked ? "🔒" : "🔓"}</button>
                             </div>
-                            <select className={`w-full rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${(!currentSubject || isLocked) ? "opacity-50 pointer-events-none" : ""} ${isCompact ? "p-0 text-xs" : "p-1"}`} onChange={(e) => handleAssign(date, period, cls, 'teacher', e.target.value)} value={currentTeacher} disabled={!currentSubject || isLocked}>
+                            <select 
+                              id={`select-${dIndex}-${pIndex}-${cIndex}-teacher`}
+                              className={`w-full rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${(!currentSubject || isLocked) ? "opacity-50 pointer-events-none" : ""} ${isCompact ? "p-0 text-xs" : "p-1"}`} 
+                              onChange={(e) => handleAssign(date, period, cls, 'teacher', e.target.value)} 
+                              value={currentTeacher} 
+                              disabled={!currentSubject || isLocked}
+                              onKeyDown={(e) => handleCellNavigation(e, dIndex, pIndex, cIndex, 'teacher')}
+                            >
                               <option value="">-</option>{filteredTeachers.map(t => <option key={t.name} value={t.name} disabled={t.ngSlots?.includes(`${date}-${period}`) || t.ngClasses?.includes(cls)}>{t.name}</option>)}
                             </select>
                             {isTeacherConflict && <div className="text-xs text-red-600 font-bold text-center bg-red-100 rounded">重複</div>}
