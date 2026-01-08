@@ -43,7 +43,7 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-const STORAGE_KEY_PROJECT = 'winter_schedule_project_v38'; // Key updated for v38
+const STORAGE_KEY_PROJECT = 'winter_schedule_project_v39'; // Key updated for v39
 
 export default function ScheduleApp() {
   const [project, setProject] = useState(() => {
@@ -73,7 +73,6 @@ export default function ScheduleApp() {
 
   const fileInputRef = useRef(null);
 
-  // --- v38追加: 警告箇所へのスクロール機能 ---
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   const currentConfig = activeTab.config;
@@ -160,7 +159,6 @@ export default function ScheduleApp() {
     return { conflictMap, subjectOrders, dailySubjectMap, errorKeys, teacherDailyCounts };
   }, [project, currentSchedule, currentConfig]);
 
-  // --- v38修正: クラッシュ対策（未定義だった関数を実装） ---
   const scrollToFirstError = () => {
     if (analysis.errorKeys.length === 0) return;
     const firstKey = analysis.errorKeys[0];
@@ -191,12 +189,10 @@ export default function ScheduleApp() {
     return { progress: total > 0 ? Math.round((filled/total)*100) : 0, filled, total };
   }, [currentSchedule, currentConfig]);
 
-  // --- v38修正: 新規タブ作成時に設定を引き継ぐ ---
   const handleAddTab = () => {
     const name = prompt("新しいタブの名前:");
     if (!name) return;
     const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
-    // 設定をディープコピーして引き継ぐ
     const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
     const newTab = { id: newId, name, config: configToCopy, schedule: {} };
     pushHistory({ ...project, tabs: [...project.tabs, newTab], activeTabId: newId });
@@ -313,23 +309,22 @@ export default function ScheduleApp() {
   const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); window.location.reload(); }};
   const applyPattern = (pat) => { const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t); pushHistory({ ...project, tabs: newTabs }); setGeneratedPatterns([]); };
   const handleLoadJson = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{try{const data=JSON.parse(ev.target.result); pushHistory(cleanSchedule(data)); alert("読込完了");}catch{alert("エラー");}}; r.readAsText(f); e.target.value=''; };
-  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v38.json`; a.click(); };
+  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v39.json`; a.click(); };
 
-  // --- v38修正: 自動作成ロジック（計算ミスの修正） ---
+  // --- v39: 自動作成ロジック（上限撤廃） ---
   const generateSchedule = () => {
     setIsGenerating(true);
     setTimeout(() => {
-      // 1. 他タブの負荷状況（外部負荷 + 他タブの負荷）
+      // 1. 他タブの負荷状況
       const baseDailyCounts = {};
       project.teachers.forEach(t => {
         currentConfig.dates.forEach(d => {
           const key = `${d}-${t.name}`;
-          // 簡易的に externalCounts を正とする（前バージョン踏襲）
           baseDailyCounts[key] = project.externalCounts?.[key] || 0;
         });
       });
 
-      // 2. 現在のタブで「すでに手動で埋まっている」コマ数を計算（ここが修正ポイント）
+      // 2. 現在のタブで「すでに手動で埋まっている」コマ数を計算
       const currentTabFixedCounts = {};
       currentConfig.dates.forEach(d => {
         currentConfig.periods.forEach(p => {
@@ -368,7 +363,6 @@ export default function ScheduleApp() {
       currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => currentConfig.classes.forEach(c => {
         const k=`${d}-${p}-${c}`;
         const entry = currentSchedule[k];
-        // 先生が決まっていない場所、または科目は決まっているが先生だけ決まっていない場所
         if (!entry || !entry.subject || !entry.teacher) {
           slots.push({d, p, c, k, fixedSubject: entry?.subject});
         }
@@ -394,13 +388,11 @@ export default function ScheduleApp() {
              const tName = tObj.name;
              const dayKey = `${d}-${tName}`;
              
-             // 負荷計算 = (外部・他タブ負荷) + (現タブ固定済) + (探索中の仮置き)
-             const currentLoad = (baseDailyCounts[dayKey] || 0) 
-                               + (currentTabFixedCounts[dayKey] || 0) 
-                               + (tempDaily[dayKey] || 0);
+             // ★v39修正: 上限チェックを削除 (どんなに忙しくても、物理的に空いていれば入れる)
+             // const currentLoad = ... 
+             // if (currentLoad >= 4) continue; 
              
-             if (currentLoad >= 4) continue; // 1日4コマ制限
-
+             // 同時刻重複チェック（これは必須）
              if (currentConfig.classes.some(oc => oc!==c && tempSch[`${d}-${p}-${oc}`]?.teacher===tName)) continue;
 
              tempSch[k] = { subject: s, teacher: tName }; 
@@ -439,7 +431,6 @@ export default function ScheduleApp() {
     XLSX.writeFile(wb, "時間割全体.xlsx");
   };
 
-  // --- v38追加: 講師別Excel出力 ---
   const handleDownloadTeacherExcel = () => {
     const wb = XLSX.utils.book_new();
     const allRows = [["講師名", "日付", "時限", "クラス", "科目", "タブ名"]];
@@ -508,12 +499,11 @@ export default function ScheduleApp() {
       <style>{printStyle}</style>
 
       <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
-        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v38</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
+        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v39</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
         <div className="flex gap-2">
           <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold">💾 プロジェクト保存</button>
           <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
           <button onClick={handleDownloadExcel} className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold">📊 全Excel</button>
-          {/* v38追加: 個人Excelボタン */}
           <button onClick={handleDownloadTeacherExcel} className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold">👤 個人Excel</button>
           <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadJson} className="hidden" />
         </div>
@@ -534,7 +524,6 @@ export default function ScheduleApp() {
             <div className="text-xs font-bold text-gray-500">進捗</div>
             <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden relative"><div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div></div>
             <div className="text-sm font-bold text-blue-600 w-12 text-right">{dashboard.progress}%</div>
-            {/* v38修正: onClickに関数を指定 */}
             {analysis.errorKeys.length > 0 ? (<button onClick={scrollToFirstError} className="ml-2 text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-200 font-bold animate-pulse hover:bg-red-200">⚠️ {analysis.errorKeys.length}件</button>) : <span className="ml-2 text-xs text-green-600 font-bold">✨ OK</span>}
           </div>
           <div className="flex items-center gap-2">
