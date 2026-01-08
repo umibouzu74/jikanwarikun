@@ -70,9 +70,7 @@ export default function ScheduleApp() {
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
-
-  // ★ v24: ドラッグ＆ドロップ用のState
-  const [dragSource, setDragSource] = useState(null); // {key, data}
+  const [dragSource, setDragSource] = useState(null);
 
   const fileInputRef = useRef(null);
 
@@ -145,56 +143,28 @@ export default function ScheduleApp() {
     }
   };
 
-  // --- ★ v24: ドラッグ＆ドロップ処理 ---
+  // Drag & Drop
   const handleDragStart = (e, key, data) => {
-    if (data.locked || !data.subject) {
-      e.preventDefault(); // ロック済みor空セルはドラッグ不可
-      return;
-    }
+    if (data.locked || !data.subject) { e.preventDefault(); return; }
     setDragSource({ key, data });
     e.dataTransfer.effectAllowed = "move";
-    // ドラッグ中の見た目を半透明に
     e.target.style.opacity = '0.5';
   };
-
-  const handleDragEnd = (e) => {
-    e.target.style.opacity = '1'; // 見た目を戻す
-    setDragSource(null);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault(); // これがないとドロップできない
-    e.dataTransfer.dropEffect = "move";
-  };
-
+  const handleDragEnd = (e) => { e.target.style.opacity = '1'; setDragSource(null); };
+  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; };
   const handleDrop = (e, targetKey, targetData) => {
     e.preventDefault();
     if (!dragSource || dragSource.key === targetKey || targetData.locked) return;
-
-    // 交換ロジック
     const newSchedule = { ...schedule };
-    
-    // 移動元に移動先の内容を入れる（移動先が空なら空になる＝移動）
-    // 移動先が埋まっていれば交換になる
-    newSchedule[dragSource.key] = { 
-      ...targetData, 
-      locked: false // ロック情報は交換せず解除（安全のため）
-    }; 
-    
-    // 移動先に移動元の内容を入れる
-    newSchedule[targetKey] = { 
-      ...dragSource.data, 
-      locked: false // ロックは解除
-    };
-
+    newSchedule[dragSource.key] = { ...targetData, locked: false }; 
+    newSchedule[targetKey] = { ...dragSource.data, locked: false };
     updateScheduleWithHistory(newSchedule);
   };
 
-  // ------------------------------------
-
-  const handleContextMenu = (e, date, period, cls) => {
+  // Context Menu
+  const handleContextMenu = (e, date, period, cls, headerType = null, headerValue = null) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, date, period, cls });
+    setContextMenu({ x: e.pageX, y: e.pageY, date, period, cls, headerType, headerValue });
   };
 
   useEffect(() => {
@@ -205,6 +175,39 @@ export default function ScheduleApp() {
 
   const handleMenuAction = (action) => {
     if (!contextMenu) return;
+    
+    // ★ v25: ヘッダー一括操作ロジック
+    if (contextMenu.headerType) {
+      const { headerType, headerValue } = contextMenu;
+      const newSchedule = { ...schedule };
+      let updated = false;
+
+      config.dates.forEach(d => {
+        config.periods.forEach(p => {
+          config.classes.forEach(c => {
+            // 条件一致チェック
+            let isTarget = false;
+            if (headerType === 'date' && d === headerValue) isTarget = true;
+            if (headerType === 'class' && c === headerValue) isTarget = true;
+            if (headerType === 'period' && p === headerValue) isTarget = true; // periodはユニーク性が低いので注意（今回はdateとセットでないと特定不可だが、簡易的に名前一致で全日程の同時限を対象にする）
+
+            if (isTarget) {
+              const k = `${d}-${p}-${c}`;
+              if (!newSchedule[k]) newSchedule[k] = {};
+              
+              if (action === 'lock-all') { newSchedule[k].locked = true; updated = true; }
+              if (action === 'unlock-all') { newSchedule[k].locked = false; updated = true; }
+              if (action === 'clear-all' && !newSchedule[k].locked) { delete newSchedule[k]; updated = true; }
+            }
+          });
+        });
+      });
+      if (updated) updateScheduleWithHistory(newSchedule);
+      setContextMenu(null);
+      return;
+    }
+
+    // 通常のセル操作
     const { date, period, cls } = contextMenu;
     const key = `${date}-${period}-${cls}`;
     const current = schedule[key] || {};
@@ -275,15 +278,18 @@ export default function ScheduleApp() {
   const toggleTeacherNg = (i, d, pd) => setConfig(p => { const t = [...p.teachers]; const k=`${d}-${pd}`; if (!t[i].ngSlots) t[i].ngSlots=[]; if(t[i].ngSlots.includes(k)) t[i].ngSlots=t[i].ngSlots.filter(v=>v!==k); else t[i].ngSlots.push(k); return { ...p, teachers: t }; });
   const removeTeacher = (i) => { if(window.confirm("削除しますか？")) setConfig(p => ({ ...p, teachers: p.teachers.filter((_, idx) => idx !== i) })); };
 
-  const analyzeSchedule = (currentSchedule) => {
+  // 分析ロジック (日次カウント追加)
+  const analysis = useMemo(() => {
     const conflictMap = {}; const subjectOrders = {}; const dailySubjectMap = {};
+    const teacherDailyCounts = {}; // { "12/25-堀上": 2 }
     const errorKeys = [];
     const sortedKeys = [];
     config.dates.forEach(d => config.periods.forEach(p => config.classes.forEach(c => sortedKeys.push({ d, p, c, key: `${d}-${p}-${c}` }))));
+    
     config.classes.forEach(c => {
       const counts = {};
       sortedKeys.filter(k => k.c === c).forEach(({ d, p, key }) => {
-        const e = currentSchedule[key];
+        const e = schedule[key];
         if (!e || !e.subject) return;
         counts[e.subject] = (counts[e.subject] || 0) + 1;
         subjectOrders[key] = counts[e.subject];
@@ -293,7 +299,15 @@ export default function ScheduleApp() {
     });
     config.dates.forEach(d => config.periods.forEach(p => {
       const tc = {};
-      config.classes.forEach(c => { const t = currentSchedule[`${d}-${p}-${c}`]?.teacher; if (t && t !== "未定") tc[t] = (tc[t] || 0) + 1; });
+      config.classes.forEach(c => { 
+        const t = schedule[`${d}-${p}-${c}`]?.teacher; 
+        if (t && t !== "未定") {
+          tc[t] = (tc[t] || 0) + 1; 
+          // 日次カウント加算
+          const dayKey = `${d}-${t}`;
+          teacherDailyCounts[dayKey] = (teacherDailyCounts[dayKey] || 0) + 1;
+        }
+      });
       Object.keys(tc).forEach(t => { 
         if (tc[t] > 1) {
           conflictMap[`${d}-${p}-${t}`] = true; 
@@ -301,9 +315,8 @@ export default function ScheduleApp() {
         }
       });
     }));
-    return { conflictMap, subjectOrders, dailySubjectMap, errorKeys };
-  };
-  const analysis = useMemo(() => analyzeSchedule(schedule), [schedule, config]);
+    return { conflictMap, subjectOrders, dailySubjectMap, errorKeys, teacherDailyCounts };
+  }, [schedule, config]);
 
   const dashboard = useMemo(() => {
     const totalRequired = Object.values(config.subjectCounts).reduce((a, b) => a + b, 0) * config.classes.length;
@@ -437,7 +450,7 @@ export default function ScheduleApp() {
     if (pRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pRows), "個人別");
     XLSX.writeFile(wb, `時間割_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
-  const handleSaveJson = () => { const blob = new Blob([JSON.stringify({ version: 24, config, schedule }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `schedule_v24.json`; link.click(); };
+  const handleSaveJson = () => { const blob = new Blob([JSON.stringify({ version: 25, config, schedule }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `schedule_v25.json`; link.click(); };
 
   const printStyle = `
     @media print {
@@ -457,7 +470,7 @@ export default function ScheduleApp() {
 
       {/* ヘッダー・ボタン群 */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 no-print">
-        <div><h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v24</h1><p className="text-sm text-gray-600">ドラッグ＆ドロップ実装版</p></div>
+        <div><h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v25</h1><p className="text-sm text-gray-600">スマート選択肢 & 一括操作</p></div>
         
         <div className="flex items-center gap-4 bg-white p-2 rounded shadow border px-4 flex-1 justify-center max-w-2xl mx-auto">
            <div className="flex flex-col w-32"><div className="flex justify-between text-xs mb-1 font-bold text-gray-600"><span>進捗: {dashboard.progress}%</span><span>{dashboard.filledCount}/{dashboard.totalRequired}</span></div><div className="h-2 bg-gray-200 rounded overflow-hidden"><div className="h-full bg-green-500 rounded transition-all duration-500" style={{width: `${dashboard.progress}%`}}></div></div></div>
@@ -516,7 +529,7 @@ export default function ScheduleApp() {
       <div className={`overflow-auto shadow-lg rounded-lg border border-gray-300 max-h-[80vh] print-container ${isCompact ? "text-xs" : "text-sm"}`}>
         <table className="border-collapse w-full bg-white text-left relative">
           <thead className="sticky top-0 z-30 bg-gray-800 text-white shadow-md">
-            <tr><th className={`border-r border-gray-600 sticky left-0 z-40 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>日付</th><th className={`border-r border-gray-600 sticky left-24 z-30 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>時限</th>{config.classes.map(cls => <th key={cls} className={`border-r border-gray-600 last:border-0 ${isCompact ? "p-1 min-w-[100px]" : "p-3 min-w-[150px]"}`}>{cls}</th>)}</tr>
+            <tr><th className={`border-r border-gray-600 sticky left-0 z-40 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>日付</th><th className={`border-r border-gray-600 sticky left-24 z-30 bg-gray-800 ${isCompact ? "p-1 w-16" : "p-3 w-24"}`}>時限</th>{config.classes.map(cls => <th key={cls} className={`border-r border-gray-600 last:border-0 cursor-context-menu hover:bg-gray-700 transition-colors ${isCompact ? "p-1 min-w-[100px]" : "p-3 min-w-[150px]"}`} onContextMenu={(e) => handleContextMenu(e, null, null, null, 'class', cls)}>{cls}</th>)}</tr>
           </thead>
           <tbody>
             {config.dates.map((date, dIndex) => (
@@ -525,8 +538,8 @@ export default function ScheduleApp() {
                 const borderClass = isDayEnd ? "border-b-4 border-gray-400" : "border-b hover:bg-gray-50";
                 return (
                   <tr key={`${date}-${period}`} className={borderClass}>
-                    {pIndex === 0 && <td rowSpan={config.periods.length} className={`font-bold align-top bg-gray-100 border-r sticky left-0 z-20 shadow-sm border-b-4 border-gray-400 ${isCompact ? "p-1" : "p-3"}`}>{date}</td>}
-                    <td className={`border-r bg-gray-50 text-gray-700 sticky left-24 z-10 shadow-sm ${isDayEnd ? "border-b-4 border-gray-400" : ""} ${isCompact ? "p-1" : "p-3"}`}>{period}</td>
+                    {pIndex === 0 && <td rowSpan={config.periods.length} className={`font-bold align-top bg-gray-100 border-r sticky left-0 z-20 shadow-sm border-b-4 border-gray-400 cursor-context-menu hover:bg-gray-200 transition-colors ${isCompact ? "p-1" : "p-3"}`} onContextMenu={(e) => handleContextMenu(e, null, null, null, 'date', date)}>{date}</td>}
+                    <td className={`border-r bg-gray-50 text-gray-700 sticky left-24 z-10 shadow-sm cursor-context-menu hover:bg-gray-200 transition-colors ${isDayEnd ? "border-b-4 border-gray-400" : ""} ${isCompact ? "p-1" : "p-3"}`} onContextMenu={(e) => handleContextMenu(e, null, null, null, 'period', period)}>{period}</td>
                     {config.classes.map((cls, cIndex) => {
                       const key = `${date}-${period}-${cls}`;
                       const currentData = schedule[key] || {};
@@ -547,7 +560,6 @@ export default function ScheduleApp() {
                         <td 
                           key={cls} id={key} className={`border-r last:border-0 ${isCompact ? "p-1" : "p-2"}`} 
                           onContextMenu={(e) => handleContextMenu(e, date, period, cls)}
-                          // ★ v24: ドラッグイベント
                           draggable={!isLocked && !!currentSubject}
                           onDragStart={(e) => handleDragStart(e, key, currentData)}
                           onDragOver={handleDragOver}
@@ -578,7 +590,22 @@ export default function ScheduleApp() {
                               disabled={!currentSubject || isLocked}
                               onKeyDown={(e) => handleCellNavigation(e, dIndex, pIndex, cIndex, 'teacher')}
                             >
-                              <option value="">-</option>{filteredTeachers.map(t => <option key={t.name} value={t.name} disabled={t.ngSlots?.includes(`${date}-${period}`) || t.ngClasses?.includes(cls)}>{t.name}</option>)}
+                              <option value="">-</option>
+                              {filteredTeachers.map(t => {
+                                const isNgSlot = t.ngSlots?.includes(`${date}-${period}`);
+                                const isNgClass = t.ngClasses?.includes(cls);
+                                const dailyCount = analysis.teacherDailyCounts[`${date}-${t.name}`] || 0;
+                                const isOverworked = dailyCount >= 4; // 仮の基準: 1日4コマ以上で注意
+                                const isDisabled = isNgSlot || isNgClass;
+                                
+                                // ★ v25: 情報付きラベル (今日: 2コマ)
+                                let label = t.name;
+                                if (isDisabled) label += isNgSlot ? "(NG時)" : "(クラス外)";
+                                else label += ` (${dailyCount})`;
+                                if (isOverworked) label += "⚠️";
+
+                                return <option key={t.name} value={t.name} disabled={isDisabled} className={isDisabled ? "text-gray-300 bg-gray-100" : (isOverworked ? "bg-yellow-100" : "")}>{label}</option>;
+                              })}
                             </select>
                             {isTeacherConflict && <div className="text-xs text-red-600 font-bold text-center bg-red-100 rounded">重複</div>}
                           </div>
@@ -595,10 +622,23 @@ export default function ScheduleApp() {
 
       {contextMenu && (
         <div className="fixed bg-white border border-gray-200 shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
-          <button onClick={() => handleMenuAction('copy')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">📝 コピー</button>
-          <button onClick={() => handleMenuAction('paste')} className={`block w-full text-left px-4 py-2 border-b ${!clipboard?"text-gray-300":"hover:bg-gray-100"}`}>📋 貼り付け</button>
-          <button onClick={() => handleMenuAction('lock')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">🔒 ロック切替</button>
-          <button onClick={() => handleMenuAction('clear')} className="block w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">🗑️ クリア</button>
+          {contextMenu.headerType ? (
+            // ★ v25: ヘッダー用メニュー
+            <>
+              <div className="px-4 py-2 bg-gray-50 border-b font-bold text-gray-500 text-xs">{contextMenu.headerValue} の一括操作</div>
+              <button onClick={() => handleMenuAction('lock-all')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">🔒 一括ロック</button>
+              <button onClick={() => handleMenuAction('unlock-all')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">🔓 一括解除</button>
+              <button onClick={() => handleMenuAction('clear-all')} className="block w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">🗑️ 一括クリア</button>
+            </>
+          ) : (
+            // 通常メニュー
+            <>
+              <button onClick={() => handleMenuAction('copy')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">📝 コピー</button>
+              <button onClick={() => handleMenuAction('paste')} className={`block w-full text-left px-4 py-2 border-b ${!clipboard?"text-gray-300":"hover:bg-gray-100"}`}>📋 貼り付け</button>
+              <button onClick={() => handleMenuAction('lock')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">🔒 ロック切替</button>
+              <button onClick={() => handleMenuAction('clear')} className="block w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">🗑️ クリア</button>
+            </>
+          )}
         </div>
       )}
     </div>
