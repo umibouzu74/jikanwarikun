@@ -40,12 +40,25 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-const STORAGE_KEY_PROJECT = 'winter_schedule_project_v28';
+// ★修正点: 保存キーを変更して、古いデータとの衝突を回避
+const STORAGE_KEY_PROJECT = 'winter_schedule_project_v29_1_fixed';
 
 export default function ScheduleApp() {
+  // --- State Initialization ---
   const [project, setProject] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_PROJECT);
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_PROJECT);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // データ構造の簡易チェック（タブがあるか）
+        if (parsed.tabs && Array.isArray(parsed.tabs) && parsed.tabs.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Save data corrupted, resetting to default.", e);
+    }
+    // デフォルト値
     return {
       teachers: INITIAL_TEACHERS,
       activeTabId: 1,
@@ -69,9 +82,10 @@ export default function ScheduleApp() {
   const [dragSource, setDragSource] = useState(null);
   const fileInputRef = useRef(null);
 
+  // 安全にタブを取得
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-  const currentSchedule = activeTab.schedule;
-  const currentConfig = activeTab.config;
+  const currentSchedule = activeTab?.schedule || {};
+  const currentConfig = activeTab?.config || DEFAULT_TAB_CONFIG;
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
 
   useEffect(() => {
@@ -93,16 +107,18 @@ export default function ScheduleApp() {
 
   const globalDailyCounts = useMemo(() => {
     const counts = {}; 
-    project.tabs.forEach(tab => {
-      Object.keys(tab.schedule).forEach(key => {
-        const date = tab.config.dates.find(d => key.startsWith(d));
-        const entry = tab.schedule[key];
-        if (date && entry && entry.teacher && entry.teacher !== "未定") {
-          const mapKey = `${date}-${entry.teacher}`;
-          counts[mapKey] = (counts[mapKey] || 0) + 1;
-        }
+    if(project && project.tabs){
+      project.tabs.forEach(tab => {
+        Object.keys(tab.schedule).forEach(key => {
+          const date = tab.config.dates.find(d => key.startsWith(d));
+          const entry = tab.schedule[key];
+          if (date && entry && entry.teacher && entry.teacher !== "未定") {
+            const mapKey = `${date}-${entry.teacher}`;
+            counts[mapKey] = (counts[mapKey] || 0) + 1;
+          }
+        });
       });
-    });
+    }
     return counts;
   }, [project]);
 
@@ -194,24 +210,32 @@ export default function ScheduleApp() {
     setContextMenu(null);
   };
 
-  const handleExternalCountChange = (d, t, v) => setConfig(p => ({ ...p, externalCounts: { ...p.externalCounts, [`${d}-${t}`]: parseInt(v)||0 } }));
+  const handleExternalCountChange = (d, t, v) => {
+    // 外部負荷もactiveTabのconfigの一部として管理するか、projectルートで管理するか。
+    // v28の構造に合わせてactiveTabのconfigに入れます(本来はGlobalが望ましいが今回はTab独立性を重視)
+    const key = `${d}-${t}`;
+    const val = parseInt(v)||0;
+    updateCurrentConfig('externalCounts', { ...currentConfig.externalCounts, [key]: val });
+  };
+  
   const handleClearUnlocked = () => { if(window.confirm("ロック以外を削除しますか？")) { const ns={}; Object.keys(currentSchedule).forEach(k=>{if(currentSchedule[k].locked)ns[k]=currentSchedule[k]}); updateCurrentSchedule(ns); }};
-  const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); setProject({ teachers: INITIAL_TEACHERS, activeTabId: 1, tabs: [{ id: 1, name: "メイン", config: DEFAULT_TAB_CONFIG, schedule: {} }] }); }};
+  const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); setProject({ teachers: INITIAL_TEACHERS, activeTabId: 1, tabs: [{ id: 1, name: "メイン(午後)", config: DEFAULT_TAB_CONFIG, schedule: {} }] }); }};
   const applyPattern = (pat) => { updateCurrentSchedule(pat); setGeneratedPatterns([]); };
   const handleLoadJson = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{try{setProject(JSON.parse(ev.target.result));alert("読込完了");}catch{alert("エラー");}}; r.readAsText(f); e.target.value=''; };
   const handleSaveJson = () => { const b=new Blob([JSON.stringify(project,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v29.json`; a.click(); };
 
   const analysisData = useMemo(() => {
     const teacherDaily = {};
+    const extCounts = currentConfig.externalCounts || {};
     currentConfig.dates.forEach(d => {
-      project.teachers.forEach(t => { teacherDaily[`${d}-${t.name}`] = { current: 0, external: (config.externalCounts?.[`${d}-${t.name}`]||0), total: (config.externalCounts?.[`${d}-${t.name}`]||0) }; });
+      project.teachers.forEach(t => { teacherDaily[`${d}-${t.name}`] = { current: 0, external: (extCounts[`${d}-${t.name}`]||0), total: (extCounts[`${d}-${t.name}`]||0) }; });
       currentConfig.periods.forEach(p => currentConfig.classes.forEach(c => {
         const t = currentSchedule[`${d}-${p}-${c}`]?.teacher;
         if(t && t!=="未定") { const k=`${d}-${t}`; if(!teacherDaily[k]) teacherDaily[k]={current:0,external:0,total:0}; teacherDaily[k].current++; teacherDaily[k].total++; }
       }));
     });
     return teacherDaily;
-  }, [currentSchedule, config]);
+  }, [currentSchedule, currentConfig, project.teachers]);
 
   const dashboard = useMemo(() => {
     const total = Object.values(currentConfig.subjectCounts).reduce((a,b)=>a+b,0) * currentConfig.classes.length;
@@ -269,7 +293,6 @@ export default function ScheduleApp() {
     XLSX.writeFile(wb, "時間割プロジェクト.xlsx");
   };
 
-  // --- Components ---
   const SummaryTable = ({ target }) => { /* Simplified Summary */
     const totals = {}; project.teachers.forEach(t=>totals[t.name]=0);
     Object.values(target).forEach(e=>{if(e.teacher)totals[e.teacher]++});
@@ -281,7 +304,6 @@ export default function ScheduleApp() {
     );
   };
 
-  // --- Print Style ---
   const printStyle = `@media print { @page { size: landscape; } .no-print { display: none !important; } .print-container { max-height: none !important; border: none !important; } }`;
 
   return (
@@ -289,9 +311,9 @@ export default function ScheduleApp() {
       <style>{printStyle}</style>
 
       {/* --- 1. Global App Header (Top Row) --- */}
-      <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200 gap-4">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v29</h1>
+          <h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v29.1</h1>
           <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span>
         </div>
         <div className="flex gap-2">
@@ -321,10 +343,9 @@ export default function ScheduleApp() {
       {/* --- 3. Active Tab Content Area --- */}
       <div className="bg-white p-4 rounded-b-lg rounded-tr-lg shadow-md min-h-[600px]">
         
-        {/* ★ Command Bar (Toolbar) - The restored buttons! */}
+        {/* ★ Command Bar (Toolbar) */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4 p-2 bg-slate-50 border border-slate-200 rounded no-print">
           
-          {/* Dashboard Section */}
           <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded border border-gray-200 shadow-sm flex-1 min-w-[250px]">
             <div className="text-xs font-bold text-gray-500">進捗</div>
             <div className="flex-1 h-3 bg-gray-200 rounded-full overflow-hidden relative">
@@ -336,7 +357,6 @@ export default function ScheduleApp() {
             ) : <span className="ml-2 text-xs text-green-600 font-bold">✨ OK</span>}
           </div>
 
-          {/* Edit Buttons Section */}
           <div className="flex items-center gap-2">
             <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 shadow-sm text-sm">
               {isCompact ? "🔍 標準" : "📏 縮小"}
@@ -352,16 +372,13 @@ export default function ScheduleApp() {
           </div>
         </div>
 
-        {/* --- Content: Summary --- */}
         {showSummary && (
           <div className="mb-4 no-print animate-fade-in">
-            {/* 簡易集計表（前バージョンの詳細版を復元する場合はここに追加） */}
             <div className="p-4 bg-indigo-50 border border-indigo-100 rounded">
               <h3 className="font-bold text-indigo-800 mb-2">📊 現在のタブの講師別コマ数</h3>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(analysisData).filter(([k]) => k.startsWith(currentConfig.dates[0])).map(([k, v]) => { // とりあえず初日のデータを表示する例（本来は全期間合計すべき）
+                {Object.entries(analysisData).filter(([k]) => k.startsWith(currentConfig.dates[0])).map(([k, v]) => {
                    const name = k.split('-')[1];
-                   // 簡易的に全期間合計を再計算
                    let totalCurrent = 0; let totalExt = 0;
                    currentConfig.dates.forEach(d => {
                      const key = `${d}-${name}`;
@@ -382,7 +399,6 @@ export default function ScheduleApp() {
           </div>
         )}
 
-        {/* --- Content: Generated Patterns --- */}
         {generatedPatterns.length > 0 && (
           <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded no-print">
             <div className="flex justify-between items-center mb-2">
@@ -401,7 +417,6 @@ export default function ScheduleApp() {
           </div>
         )}
 
-        {/* --- Content: Config Modal --- */}
         {showConfig && (
           <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print">
             <div className="bg-white w-full max-w-5xl h-[85vh] rounded-lg shadow-2xl flex flex-col overflow-hidden animate-fade-in">
@@ -430,7 +445,7 @@ export default function ScheduleApp() {
                             <td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
                             {currentConfig.dates.map(d => (
                               <td key={d} className="border p-0">
-                                <input type="number" min="0" className="w-full h-full p-2 text-center focus:bg-blue-50 focus:outline-none" value={config.externalCounts?.[`${d}-${t.name}`] || ""} placeholder="-" onChange={(e) => handleExternalCountChange(d, t.name, e.target.value)} />
+                                <input type="number" min="0" className="w-full h-full p-2 text-center focus:bg-blue-50 focus:outline-none" value={currentConfig.externalCounts?.[`${d}-${t.name}`] || ""} placeholder="-" onChange={(e) => handleExternalCountChange(d, t.name, e.target.value)} />
                               </td>
                             ))}
                           </tr>
@@ -469,9 +484,7 @@ export default function ScheduleApp() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">
-                        💡 NG日程はカレンダー画面でセルを右クリック → 「編集」ではなく、カレンダー上の操作で行うのがスムーズです。
-                      </div>
+                      <div className="text-xs text-gray-500 bg-gray-100 p-2 rounded">💡 NG日程はカレンダー画面でセルを右クリック → 「編集」ではなく、カレンダー上の操作で行うのがスムーズです。</div>
                     </div>
                   </div>
                 )}
@@ -512,9 +525,7 @@ export default function ScheduleApp() {
 
                         return (
                           <td 
-                            key={c}
-                            id={key}
-                            className={`border-r last:border-0 ${isCompact ? "p-0.5" : "p-2"}`}
+                            key={c} id={key} className={`border-r last:border-0 ${isCompact ? "p-0.5" : "p-2"}`}
                             draggable={!isLocked && !!entry.subject}
                             onDragStart={(e) => handleDragStart(e, key, entry)}
                             onDragOver={(e) => e.preventDefault()}
@@ -529,14 +540,12 @@ export default function ScheduleApp() {
                                     value={entry.subject || ""}
                                     onChange={(e) => handleAssign(d, p, c, 'subject', e.target.value)}
                                   >
-                                    <option value="">-</option>
-                                    {commonSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                                    <option value="">-</option>{commonSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                                   </select>
                                   {entry.subject && <span className={`absolute right-0 top-0 text-[9px] px-1 rounded-full ${isOver ? "bg-red-500 text-white" : "bg-white/60 text-gray-600 border"}`}>{toCircleNum(order)}{isOver&&"!"}</span>}
                                 </div>
                                 <button onClick={() => toggleLock(d, p, c)} className={`ml-1 focus:outline-none text-gray-400 hover:text-gray-800 ${isCompact ? "text-[8px]" : "text-xs"}`}>{isLocked ? "🔒" : "🔓"}</button>
                               </div>
-                              
                               <select 
                                 className={`w-full rounded cursor-pointer ${teacherConflict ? "text-red-700 font-extrabold" : "text-blue-900"} ${isCompact ? "text-[10px] py-0" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-white"}`}
                                 value={entry.teacher || ""}
