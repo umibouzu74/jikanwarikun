@@ -1,14 +1,16 @@
 import React, { useState, useMemo, useRef } from 'react';
 
-// --- 初期データ定義 ---
+// --- 初期データ定義 (v8: 日程とコマ数を現実に合わせました) ---
 const INITIAL_CONFIG = {
-  dates: ["12/25(木)", "12/26(金)", "12/27(土)", "12/28(日)"],
+  // 6日間 = 18コマ
+  dates: ["12/25(木)", "12/26(金)", "12/27(土)", "1/4(日)", "1/6(火)", "1/7(水)"],
   periods: ["1限 (13:00~)", "2限 (14:10~)", "3限 (15:20~)"],
   classes: ["Sクラス", "Aクラス", "Bクラス", "Cクラス"],
   subjects: ["英語", "数学", "国語", "理科", "社会"],
-  subjectCounts: { "英語": 10, "数学": 10, "国語": 8, "理科": 6, "社会": 6 },
+  // 合計18コマの内訳設定
+  subjectCounts: { "英語": 4, "数学": 4, "国語": 3, "理科": 4, "社会": 3 },
+  
   teachers: [
-    // ngClasses (行かないクラス) を追加
     { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [] },
     { name: "片岡", subjects: ["数学"], ngSlots: [], ngClasses: [] },
     { name: "井上", subjects: ["社会"], ngSlots: [], ngClasses: [] },
@@ -27,7 +29,7 @@ export default function ScheduleApp() {
   const [schedule, setSchedule] = useState({});
   const [config, setConfig] = useState(INITIAL_CONFIG);
   const [showConfig, setShowConfig] = useState(false);
-  const [showSummary, setShowSummary] = useState(false); // 集計表の表示切替
+  const [showSummary, setShowSummary] = useState(false);
   const [editingNgIndex, setEditingNgIndex] = useState(null);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -72,7 +74,6 @@ export default function ScheduleApp() {
     });
   };
 
-  // NGクラスの切り替え
   const toggleTeacherNgClass = (teacherIndex, cls) => {
     setConfig(prev => {
       const newTeachers = [...prev.teachers];
@@ -153,7 +154,6 @@ export default function ScheduleApp() {
 
   // --- 集計表生成用コンポーネント ---
   const SummaryTable = ({ targetSchedule }) => {
-    // データ集計: { [クラス]: { [科目]: { [講師]: 回数 } } }
     const summary = {};
     config.classes.forEach(cls => {
       summary[cls] = {};
@@ -163,7 +163,6 @@ export default function ScheduleApp() {
     Object.keys(targetSchedule).forEach(key => {
       const entry = targetSchedule[key];
       if (entry && entry.subject && entry.teacher) {
-        // keyからクラス名を抽出 (簡易的)
         const cls = config.classes.find(c => key.includes(c));
         if (cls && summary[cls][entry.subject]) {
           const t = entry.teacher;
@@ -206,12 +205,14 @@ export default function ScheduleApp() {
     );
   };
 
-  // --- 自動生成ロジック ---
+  // --- 自動生成ロジック (v8: フリーズ防止機能付き) ---
   const generateSchedule = () => {
     setIsGenerating(true);
     setTimeout(() => {
       const solutions = [];
       const slots = [];
+      
+      // 空きスロット抽出
       config.dates.forEach(date => {
         config.periods.forEach(period => {
           config.classes.forEach(cls => {
@@ -223,6 +224,7 @@ export default function ScheduleApp() {
         });
       });
 
+      // 現在のカウント状況
       const currentCounts = {};
       config.classes.forEach(cls => {
         currentCounts[cls] = {};
@@ -236,7 +238,15 @@ export default function ScheduleApp() {
         }
       });
 
+      // フリーズ防止用のカウンタ
+      let iterationCount = 0;
+      const MAX_ITERATIONS = 500000; // この回数を超えたら諦める
+
       const solve = (index, tempSchedule, tempCounts) => {
+        // 安全装置
+        iterationCount++;
+        if (iterationCount > MAX_ITERATIONS) return;
+
         if (solutions.length >= 3) return;
         if (index >= slots.length) {
           solutions.push(JSON.parse(JSON.stringify(tempSchedule)));
@@ -246,10 +256,13 @@ export default function ScheduleApp() {
         const slot = slots[index];
         const { date, period, cls, key } = slot;
         
-        // 科目をランダム順で
+        // ランダム性を出すために科目をシャッフル
         const shuffledSubjects = [...config.subjects].sort(() => Math.random() - 0.5);
 
         for (const subject of shuffledSubjects) {
+          // 安全装置が作動していたらループを抜ける
+          if (iterationCount > MAX_ITERATIONS) return;
+
           const maxCount = config.subjectCounts[subject] || 0;
           if ((tempCounts[cls][subject] || 0) >= maxCount) continue;
 
@@ -260,12 +273,10 @@ export default function ScheduleApp() {
           });
           if (isDailyDup) continue;
 
-          // 講師の選択（NGクラスとNG時間を考慮）
+          // 講師選択
           const validTeachers = config.teachers.filter(t => {
             if (!t.subjects.includes(subject)) return false;
-            // ★NGクラス制限
             if (t.ngClasses && t.ngClasses.includes(cls)) return false; 
-            // NG時間制限
             if (t.ngSlots && t.ngSlots.includes(`${date}-${period}`)) return false;
             return true;
           });
@@ -289,6 +300,7 @@ export default function ScheduleApp() {
              solve(index + 1, tempSchedule, tempCounts);
 
              if (solutions.length >= 3) return;
+             // バックトラック
              delete tempSchedule[key];
              tempCounts[cls][subject] -= 1;
           }
@@ -296,9 +308,15 @@ export default function ScheduleApp() {
       };
 
       solve(0, JSON.parse(JSON.stringify(schedule)), JSON.parse(JSON.stringify(currentCounts)));
+      
       setGeneratedPatterns(solutions);
       setIsGenerating(false);
-      if (solutions.length === 0) alert("条件を満たすパターンが見つかりませんでした。");
+
+      if (iterationCount > MAX_ITERATIONS) {
+        alert("条件が厳しすぎて、時間内にパターンが見つかりませんでした。\n(タイムアウトしました)\n\n・手動でいくつか埋める\n・NG条件を減らす\n・コマ数設定を確認する\nなどを試してください。");
+      } else if (solutions.length === 0) {
+        alert("条件をすべて満たすパターンが見つかりませんでした。");
+      }
     }, 100);
   };
 
@@ -309,12 +327,12 @@ export default function ScheduleApp() {
   };
 
   const handleSaveJson = () => {
-    const saveData = { version: 7, config, schedule };
+    const saveData = { version: 8, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v7_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v8_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -331,7 +349,7 @@ export default function ScheduleApp() {
           const patchedTeachers = patchedConfig.teachers.map(t => ({
              ...t, 
              ngSlots: t.ngSlots || [],
-             ngClasses: t.ngClasses || [] // 新しいフィールドの補正
+             ngClasses: t.ngClasses || [] 
           }));
           setConfig({ ...patchedConfig, teachers: patchedTeachers });
           setSchedule(data.schedule);
@@ -346,8 +364,8 @@ export default function ScheduleApp() {
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v7</h1>
-          <p className="text-sm text-gray-600">クラス制限＆集計プレビュー</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v8</h1>
+          <p className="text-sm text-gray-600">フリーズ防止機能＆日程最適化</p>
         </div>
         <div className="flex gap-2">
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow flex items-center gap-2">📊 集計</button>
@@ -361,7 +379,6 @@ export default function ScheduleApp() {
         </div>
       </div>
 
-      {/* 集計表 (トグル表示) */}
       {showSummary && (
         <div className="mb-6 animate-fade-in">
           <h2 className="font-bold text-lg text-indigo-900 mb-2">📊 現在の授業数カウント</h2>
@@ -369,10 +386,9 @@ export default function ScheduleApp() {
         </div>
       )}
 
-      {/* 自動生成結果の選択モーダル (プレビュー付き) */}
       {generatedPatterns.length > 0 && (
         <div className="mb-6 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg animate-fade-in">
-          <h2 className="font-bold text-lg text-purple-900 mb-2">✨ 生成結果 (プレビューを確認してクリック)</h2>
+          <h2 className="font-bold text-lg text-purple-900 mb-2">✨ 生成結果</h2>
           <div className="flex flex-col gap-4">
             {generatedPatterns.map((pattern, idx) => (
               <div key={idx} className="bg-white border border-purple-300 rounded p-4 shadow-sm">
@@ -380,7 +396,6 @@ export default function ScheduleApp() {
                   <div className="font-bold text-lg text-purple-800">案 {idx + 1}</div>
                   <button onClick={() => applyPattern(pattern)} className="bg-purple-600 text-white px-4 py-1 rounded hover:bg-purple-700 shadow">この案を適用</button>
                 </div>
-                {/* ここで集計表を表示 */}
                 <SummaryTable targetSchedule={pattern} />
               </div>
             ))}
@@ -389,13 +404,12 @@ export default function ScheduleApp() {
         </div>
       )}
 
-      {/* 設定エリア */}
       {showConfig && (
         <div className="mb-6 p-4 bg-white border border-gray-300 rounded-lg shadow-sm">
           <h2 className="font-bold text-lg mb-4 text-gray-700">⚙️ マスタ設定</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-4">
-              <div><label className="block text-xs font-bold text-gray-500 mb-1">日付</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.dates.join(", ")} onChange={(e) => handleListConfigChange('dates', e.target.value)} /></div>
+              <div><label className="block text-xs font-bold text-gray-500 mb-1">日付</label><textarea className="w-full border p-2 rounded text-sm h-16" value={config.dates.join(", ")} onChange={(e) => handleListConfigChange('dates', e.target.value)} /></div>
               <div><label className="block text-xs font-bold text-gray-500 mb-1">時限</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.periods.join(", ")} onChange={(e) => handleListConfigChange('periods', e.target.value)} /></div>
               <div><label className="block text-xs font-bold text-gray-500 mb-1">クラス</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.classes.join(", ")} onChange={(e) => handleListConfigChange('classes', e.target.value)} /></div>
               <div className="border p-2 rounded bg-yellow-50">
@@ -414,7 +428,7 @@ export default function ScheduleApp() {
 
             <div className="md:col-span-2 border-l pl-4">
               <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-bold text-gray-700">👤 講師設定 (担当科目・NG時間・NGクラス)</label>
+                <label className="block text-sm font-bold text-gray-700">👤 講師設定</label>
                 <button onClick={addTeacher} className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">+ 講師追加</button>
               </div>
               <div className="overflow-y-auto max-h-[400px] border rounded bg-gray-50 p-2 mb-4">
@@ -423,7 +437,7 @@ export default function ScheduleApp() {
                     <tr className="border-b text-left text-gray-500">
                       <th className="p-2 w-20">氏名</th>
                       <th className="p-2 w-40">担当可能科目</th>
-                      <th className="p-2">NGクラス設定 (行かないクラスに☑)</th>
+                      <th className="p-2">NGクラス(行かない)</th>
                       <th className="p-2 w-20">NG時間</th>
                       <th className="p-2 w-10">削除</th>
                     </tr>
@@ -548,7 +562,6 @@ export default function ScheduleApp() {
                             <option value="">{currentSubject ? "- 講師 -" : "(科目未定)"}</option>
                             {filteredTeachers.map(t => {
                               const isNgSlot = t.ngSlots?.includes(`${date}-${period}`);
-                              // NGクラスかどうか
                               const isNgClass = t.ngClasses?.includes(cls);
                               
                               const isDisabled = isNgSlot || isNgClass;
