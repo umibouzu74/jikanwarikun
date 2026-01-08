@@ -44,18 +44,46 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-export default function ScheduleApp() {
-  const [schedule, setSchedule] = useState({});
-  const [history, setHistory] = useState([{}]);
-  const [historyIndex, setHistoryIndex] = useState(0);
+// ★ ローカルストレージのキー
+const STORAGE_KEY_SCHEDULE = 'winter_schedule_data';
+const STORAGE_KEY_CONFIG = 'winter_schedule_config';
 
-  const [config, setConfig] = useState(INITIAL_CONFIG);
+export default function ScheduleApp() {
+  // ★ v16: 初期値をローカルストレージから読み込む
+  const [schedule, setSchedule] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_SCHEDULE);
+    return saved ? JSON.parse(saved) : {};
+  });
+  
+  const [config, setConfig] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_CONFIG);
+    return saved ? JSON.parse(saved) : INITIAL_CONFIG;
+  });
+
+  const [history, setHistory] = useState([{}]); // 履歴はセッション毎にリセット（永続化しない）
+  const [historyIndex, setHistoryIndex] = useState(0);
+  
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [editingNgIndex, setEditingNgIndex] = useState(null);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("✅ 自動保存済み"); // 保存ステータス表示用
+  
   const fileInputRef = useRef(null);
+
+  // ★ v16: 変更があるたびに自動保存
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SCHEDULE, JSON.stringify(schedule));
+    setSaveStatus("💾 保存中...");
+    const timer = setTimeout(() => setSaveStatus("✅ 自動保存済み"), 800);
+    return () => clearTimeout(timer);
+  }, [schedule]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+  }, [config]);
+
 
   const updateScheduleWithHistory = (newSchedule) => {
     const nextHistory = history.slice(0, historyIndex + 1);
@@ -81,6 +109,14 @@ export default function ScheduleApp() {
       setSchedule(history[nextIndex]);
     }
   };
+
+  // 履歴初期化（初回ロード時などに履歴の先頭を現在の状態にする）
+  useEffect(() => {
+    if (history.length === 1 && Object.keys(history[0]).length === 0 && Object.keys(schedule).length > 0) {
+      setHistory([schedule]);
+      setHistoryIndex(0);
+    }
+  }, []); // 初回のみチェック
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -126,6 +162,18 @@ export default function ScheduleApp() {
       if (schedule[key].locked) newSchedule[key] = schedule[key];
     });
     updateScheduleWithHistory(newSchedule);
+  };
+
+  // ★ v16: 全データ初期化（緊急リセット用）
+  const handleResetAll = () => {
+    if (!window.confirm("【警告】すべてのデータを消去し、初期状態に戻します。\n本当によろしいですか？")) return;
+    localStorage.removeItem(STORAGE_KEY_SCHEDULE);
+    localStorage.removeItem(STORAGE_KEY_CONFIG);
+    setSchedule({});
+    setConfig(INITIAL_CONFIG);
+    setHistory([{}]);
+    setHistoryIndex(0);
+    alert("初期化しました。");
   };
 
   const applyPattern = (pattern) => {
@@ -253,19 +301,14 @@ export default function ScheduleApp() {
 
   const analysis = useMemo(() => analyzeSchedule(schedule), [schedule, config]);
 
-  // ★ v15: グラフ付き集計表コンポーネント
   const SummaryTable = ({ targetSchedule }) => {
-    // 1. クラス別・科目別集計
     const summary = {};
     config.classes.forEach(cls => {
       summary[cls] = {};
       config.subjects.forEach(subj => summary[cls][subj] = {});
     });
-
-    // 2. 講師別トータル集計 (グラフ用)
     const teacherTotals = {};
     config.teachers.forEach(t => teacherTotals[t.name] = 0);
-
     Object.keys(targetSchedule).forEach(key => {
       const entry = targetSchedule[key];
       if (entry && entry.subject && entry.teacher) {
@@ -273,24 +316,16 @@ export default function ScheduleApp() {
         if (cls && summary[cls][entry.subject]) {
           const t = entry.teacher;
           summary[cls][entry.subject][t] = (summary[cls][entry.subject][t] || 0) + 1;
-          
-          // 講師トータル加算
           teacherTotals[t] = (teacherTotals[t] || 0) + 1;
         }
       }
     });
-
-    // グラフ用にデータを配列化してソート (多い順)
     const sortedTeachers = Object.entries(teacherTotals)
-      .filter(([_, count]) => count > 0) // 0回の人は表示しない
+      .filter(([_, count]) => count > 0)
       .sort((a, b) => b[1] - a[1]);
-    
-    // グラフの最大値（100%の基準）
     const maxCount = sortedTeachers.length > 0 ? sortedTeachers[0][1] : 1;
-
     return (
       <div className="flex flex-col gap-6">
-        {/* ① 講師負荷グラフ */}
         <div className="bg-white p-4 rounded shadow border border-gray-300">
           <h3 className="font-bold text-gray-700 mb-3 border-b pb-2">📊 講師別 担当コマ数ランキング</h3>
           <div className="space-y-2">
@@ -298,10 +333,7 @@ export default function ScheduleApp() {
               <div key={name} className="flex items-center text-sm">
                 <div className="w-20 font-bold text-gray-700 text-right pr-2 truncate">{name}</div>
                 <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
-                  <div 
-                    className={`h-full ${name === "未定" ? "bg-red-400" : "bg-blue-500"}`} 
-                    style={{ width: `${(count / maxCount) * 100}%` }}
-                  ></div>
+                  <div className={`h-full ${name === "未定" ? "bg-red-400" : "bg-blue-500"}`} style={{ width: `${(count / maxCount) * 100}%` }}></div>
                 </div>
                 <div className="w-10 pl-2 font-bold text-gray-600">{count}</div>
               </div>
@@ -309,8 +341,6 @@ export default function ScheduleApp() {
             {sortedTeachers.length === 0 && <div className="text-gray-400 text-center">データがありません</div>}
           </div>
         </div>
-
-        {/* ② クラス別詳細表 */}
         <div className="overflow-x-auto border border-gray-300 rounded shadow-sm bg-white p-2">
           <h3 className="font-bold text-gray-700 mb-3 pl-2">📑 クラス別 詳細内訳</h3>
           <table className="w-full text-xs border-collapse">
@@ -438,7 +468,6 @@ export default function ScheduleApp() {
   };
 
   const handleDownloadExcel = () => {
-    // 1. 時間割シート
     const headerRow = ["日付", "時限", ...config.classes];
     const dataRows = [];
     config.dates.forEach(date => {
@@ -461,8 +490,6 @@ export default function ScheduleApp() {
     ws1['!cols'] = [{ wch: 15 }, { wch: 15 }, ...config.classes.map(() => ({ wch: 20 }))];
     XLSX.utils.book_append_sheet(wb, ws1, "時間割");
 
-    // 2. 集計シート (v15追加)
-    // 講師別集計を計算
     const teacherTotals = {};
     Object.keys(schedule).forEach(key => {
       const t = schedule[key]?.teacher;
@@ -470,9 +497,8 @@ export default function ScheduleApp() {
     });
     const summaryRows = [["講師名", "担当コマ数"]];
     Object.entries(teacherTotals)
-      .sort((a, b) => b[1] - a[1]) // 多い順
+      .sort((a, b) => b[1] - a[1])
       .forEach(([name, count]) => summaryRows.push([name, count]));
-    
     const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
     XLSX.utils.book_append_sheet(wb, ws2, "講師別集計");
 
@@ -480,12 +506,12 @@ export default function ScheduleApp() {
   };
 
   const handleSaveJson = () => {
-    const saveData = { version: 15, config, schedule };
+    const saveData = { version: 16, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v15_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v16_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -494,10 +520,11 @@ export default function ScheduleApp() {
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v15</h1>
-          <p className="text-sm text-gray-600">統計グラフ機能搭載</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v16</h1>
+          <p className="text-sm text-gray-600">自動保存機能搭載</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+           <span className="text-xs text-green-600 font-bold mr-2">{saveStatus}</span>
            <div className="flex bg-white rounded shadow border border-gray-300 mr-2">
              <button onClick={undo} disabled={historyIndex === 0} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30 border-r" title="元に戻す (Ctrl+Z)">↩️</button>
              <button onClick={redo} disabled={historyIndex === history.length - 1} className="px-3 py-2 text-gray-600 hover:bg-gray-100 disabled:opacity-30" title="やり直し (Ctrl+Y)">↪️</button>
@@ -532,7 +559,6 @@ export default function ScheduleApp() {
                   <div className="font-bold text-lg text-purple-800">案 {idx + 1}</div>
                   <button onClick={() => applyPattern(pattern)} className="bg-purple-600 text-white px-4 py-1 rounded hover:bg-purple-700 shadow">この案を適用</button>
                 </div>
-                {/* 提案段階でもグラフを見られるようにします */}
                 <SummaryTable targetSchedule={pattern} />
               </div>
             ))}
@@ -544,6 +570,8 @@ export default function ScheduleApp() {
       {showConfig && (
         <div className="mb-6 p-4 bg-white border border-gray-300 rounded-lg shadow-sm">
           <h2 className="font-bold text-lg mb-4 text-gray-700">⚙️ マスタ設定</h2>
+          <button onClick={handleResetAll} className="mb-4 text-xs text-red-500 underline">⚠️ 全データを初期化してリセット</button>
+          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-4">
               <div><label className="block text-xs font-bold text-gray-500 mb-1">日付</label><textarea className="w-full border p-2 rounded text-sm h-16" value={config.dates.join(", ")} onChange={(e) => handleListConfigChange('dates', e.target.value)} /></div>
