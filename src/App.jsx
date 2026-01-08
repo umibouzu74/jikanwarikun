@@ -2,25 +2,26 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 
 // --- 初期データ定義 ---
+// v40: priorityClasses (優先クラス) を追加
 const INITIAL_TEACHERS = [
-  { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [] },
-  { name: "石原", subjects: ["英語"], ngSlots: [], ngClasses: [] },
-  { name: "高松", subjects: ["英語"], ngSlots: [], ngClasses: [] },
-  { name: "南條", subjects: ["英語"], ngSlots: [], ngClasses: [] },
-  { name: "片岡", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "半田", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "香川", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "江本", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "河野", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "杉原", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "奥村", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-  { name: "小松", subjects: ["国語"], ngSlots: [], ngClasses: [] },
-  { name: "松川", subjects: ["国語"], ngSlots: [], ngClasses: [] },
-  { name: "三宮", subjects: ["理科"], ngSlots: [], ngClasses: [] },
-  { name: "滝澤", subjects: ["理科"], ngSlots: [], ngClasses: [] },
-  { name: "井上", subjects: ["社会"], ngSlots: [], ngClasses: [] },
-  { name: "野口", subjects: ["社会"], ngSlots: [], ngClasses: [] },
-  { name: "未定", subjects: ["英語", "数学", "国語", "理科", "社会"], ngSlots: [], ngClasses: [] }
+  { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "石原", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "高松", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "南條", subjects: ["英語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "片岡", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "半田", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "香川", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "江本", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "河野", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "杉原", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "奥村", subjects: ["数学"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "小松", subjects: ["国語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "松川", subjects: ["国語"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "三宮", subjects: ["理科"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "滝澤", subjects: ["理科"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "井上", subjects: ["社会"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "野口", subjects: ["社会"], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  { name: "未定", subjects: ["英語", "数学", "国語", "理科", "社会"], ngSlots: [], ngClasses: [], priorityClasses: [] }
 ];
 
 const DEFAULT_TAB_CONFIG = {
@@ -43,7 +44,7 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-const STORAGE_KEY_PROJECT = 'winter_schedule_project_v39'; // Key updated for v39
+const STORAGE_KEY_PROJECT = 'winter_schedule_project_v40'; // Key updated for v40
 
 export default function ScheduleApp() {
   const [project, setProject] = useState(() => {
@@ -222,7 +223,7 @@ export default function ScheduleApp() {
     pushHistory({ ...project, tabs: newTabs });
   };
 
-  const addTeacher = () => { const n = prompt("講師名:"); if(n) pushHistory({ ...project, teachers: [...project.teachers, { name: n, subjects: [], ngSlots: [], ngClasses: [] }] }); };
+  const addTeacher = () => { const n = prompt("講師名:"); if(n) pushHistory({ ...project, teachers: [...project.teachers, { name: n, subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] }] }); };
   const removeTeacher = (idx) => {
     if(!window.confirm("この講師を削除しますか？")) return;
     const targetName = project.teachers[idx].name;
@@ -242,6 +243,32 @@ export default function ScheduleApp() {
   const toggleTeacherNg = (idx, d, p) => {
     const newTeachers = [...project.teachers]; const t = newTeachers[idx]; const k = `${d}-${p}`;
     if(!t.ngSlots) t.ngSlots = []; if(t.ngSlots.includes(k)) t.ngSlots = t.ngSlots.filter(x=>x!==k); else t.ngSlots.push(k);
+    pushHistory({ ...project, teachers: newTeachers });
+  };
+
+  // --- v40: クラス優先度トグル (Neutral -> Priority -> NG -> Neutral) ---
+  const toggleTeacherClassPriority = (idx, className) => {
+    const newTeachers = [...project.teachers];
+    const t = newTeachers[idx];
+    
+    // データ構造の補完
+    if (!t.ngClasses) t.ngClasses = [];
+    if (!t.priorityClasses) t.priorityClasses = [];
+
+    const isNg = t.ngClasses.includes(className);
+    const isPri = t.priorityClasses.includes(className);
+
+    if (!isNg && !isPri) {
+      // Neutral(白) -> Priority(青)
+      t.priorityClasses.push(className);
+    } else if (isPri) {
+      // Priority(青) -> NG(赤)
+      t.priorityClasses = t.priorityClasses.filter(c => c !== className);
+      t.ngClasses.push(className);
+    } else {
+      // NG(赤) -> Neutral(白)
+      t.ngClasses = t.ngClasses.filter(c => c !== className);
+    }
     pushHistory({ ...project, teachers: newTeachers });
   };
 
@@ -309,9 +336,9 @@ export default function ScheduleApp() {
   const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); window.location.reload(); }};
   const applyPattern = (pat) => { const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t); pushHistory({ ...project, tabs: newTabs }); setGeneratedPatterns([]); };
   const handleLoadJson = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{try{const data=JSON.parse(ev.target.result); pushHistory(cleanSchedule(data)); alert("読込完了");}catch{alert("エラー");}}; r.readAsText(f); e.target.value=''; };
-  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v39.json`; a.click(); };
+  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v40.json`; a.click(); };
 
-  // --- v39: 自動作成ロジック（上限撤廃） ---
+  // --- v40: 自動作成ロジック（クラス優先度考慮） ---
   const generateSchedule = () => {
     setIsGenerating(true);
     setTimeout(() => {
@@ -347,7 +374,6 @@ export default function ScheduleApp() {
         commonSubjects.forEach(s => currentCounts[c][s] = 0); 
       });
 
-      // 現在の科目別コマ数をカウント
       Object.keys(currentSchedule).forEach(k => { 
         const e = currentSchedule[k]; 
         if (e?.subject) {
@@ -359,7 +385,6 @@ export default function ScheduleApp() {
         }
       });
 
-      // 埋めるべきスロットの抽出
       currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => currentConfig.classes.forEach(c => {
         const k=`${d}-${p}-${c}`;
         const entry = currentSchedule[k];
@@ -381,18 +406,33 @@ export default function ScheduleApp() {
           if (!fixedSubject && (tempCnt[c][s]||0) >= currentConfig.subjectCounts[s]) continue;
           if (!fixedSubject && currentConfig.periods.some(per => tempSch[`${d}-${per}-${c}`]?.subject === s)) continue;
           
-          const validT = project.teachers.filter(t => t.subjects.includes(s) && !t.ngSlots?.includes(`${d}-${p}`) && !t.ngClasses?.includes(c));
-          const shuffledT = [...validT].sort(() => Math.random() - 0.5);
+          // --- v40: 優先度ロジック ---
+          // 1. NGクラスを除外
+          const validT = project.teachers.filter(t => 
+            t.subjects.includes(s) && 
+            !t.ngSlots?.includes(`${d}-${p}`) && 
+            !t.ngClasses?.includes(c)
+          );
+
+          // 2. 優先(Priority)と普通(Neutral)に分ける
+          const priorityGroup = [];
+          const neutralGroup = [];
+          validT.forEach(t => {
+            if (t.priorityClasses?.includes(c)) priorityGroup.push(t);
+            else neutralGroup.push(t);
+          });
+
+          // 3. それぞれシャッフルして結合（優先グループを先に）
+          const shuffledT = [
+            ...priorityGroup.sort(() => Math.random() - 0.5),
+            ...neutralGroup.sort(() => Math.random() - 0.5)
+          ];
+          // ------------------------
 
           for (const tObj of shuffledT) {
              const tName = tObj.name;
              const dayKey = `${d}-${tName}`;
              
-             // ★v39修正: 上限チェックを削除 (どんなに忙しくても、物理的に空いていれば入れる)
-             // const currentLoad = ... 
-             // if (currentLoad >= 4) continue; 
-             
-             // 同時刻重複チェック（これは必須）
              if (currentConfig.classes.some(oc => oc!==c && tempSch[`${d}-${p}-${oc}`]?.teacher===tName)) continue;
 
              tempSch[k] = { subject: s, teacher: tName }; 
@@ -499,7 +539,7 @@ export default function ScheduleApp() {
       <style>{printStyle}</style>
 
       <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
-        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v39</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
+        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v40</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
         <div className="flex gap-2">
           <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold">💾 プロジェクト保存</button>
           <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
@@ -569,8 +609,9 @@ export default function ScheduleApp() {
               <div className="p-4 border-b flex justify-between items-center bg-gray-50"><h2 className="font-bold text-lg text-gray-700">⚙️ 設定メニュー</h2><button onClick={() => setShowConfig(false)} className="text-2xl font-bold text-gray-400 hover:text-gray-600">×</button></div>
               <div className="flex gap-4 px-6 pt-4 border-b">
                 <button onClick={() => setConfigTab('basic')} className={`pb-2 font-bold ${configTab==='basic' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>基本設定</button>
-                <button onClick={() => setConfigTab('external')} className={`pb-2 font-bold ${configTab==='external' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>📅 他学年・午前登録</button>
-                <button onClick={() => setConfigTab('ng')} className={`pb-2 font-bold ${configTab==='ng' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🚫 NG一括設定</button>
+                <button onClick={() => setConfigTab('classes')} className={`pb-2 font-bold ${configTab==='classes' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🏫 クラス優先度</button>
+                <button onClick={() => setConfigTab('external')} className={`pb-2 font-bold ${configTab==='external' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>📅 他学年・午前</button>
+                <button onClick={() => setConfigTab('ng')} className={`pb-2 font-bold ${configTab==='ng' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🚫 日時NG</button>
               </div>
               <div className="flex-1 overflow-y-auto p-6">
                 {configTab === 'external' ? (
@@ -584,6 +625,43 @@ export default function ScheduleApp() {
                     <table className="w-full border-collapse text-xs whitespace-nowrap">
                       <thead><tr><th className="border p-2 bg-gray-100 sticky left-0 z-20">講師名</th>{currentConfig.dates.map(d => (currentConfig.periods.map(p => (<th key={`${d}-${p}`} className="border p-1 bg-gray-50 font-normal min-w-[40px] text-center">{d}<br/>{p}</th>))))}</tr></thead>
                       <tbody>{project.teachers.map((t, idx) => (<tr key={t.name}><td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>{currentConfig.dates.map(d => (currentConfig.periods.map(p => { const k=`${d}-${p}`; const isNg=t.ngSlots?.includes(k); return (<td key={k} onClick={() => toggleTeacherNg(idx, d, p)} className={`border p-1 text-center cursor-pointer hover:opacity-80 transition-colors ${isNg?"bg-red-500 text-white font-bold":"bg-white"}`}>{isNg?"NG":""}</td>); }))) }</tr>))}</tbody>
+                    </table>
+                  </div>
+                ) : configTab === 'classes' ? (
+                  <div className="overflow-x-auto">
+                    <div className="bg-indigo-50 p-3 mb-4 rounded text-sm text-indigo-800 border border-indigo-200">
+                      <strong>クラス優先度設定:</strong> クリックして切り替えます。<br/>
+                      ⚪ <strong>白(普通):</strong> 空いていれば入る<br/>
+                      🔵 <strong>青(優先):</strong> 可能な限りここに入る (自動作成で優先)<br/>
+                      🔴 <strong>赤(NG):</strong> 自動作成では絶対に入らない
+                    </div>
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr>
+                          <th className="border p-2 bg-gray-100 min-w-[100px] sticky left-0 z-10">講師名</th>
+                          {currentConfig.classes.map(c => <th key={c} className="border p-2 bg-gray-100 min-w-[100px] text-center">{c}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {project.teachers.map((t, idx) => (
+                          <tr key={t.name}>
+                            <td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
+                            {currentConfig.classes.map(c => {
+                              const isNg = t.ngClasses?.includes(c);
+                              const isPri = t.priorityClasses?.includes(c);
+                              return (
+                                <td 
+                                  key={c} 
+                                  onClick={() => toggleTeacherClassPriority(idx, c)}
+                                  className={`border p-2 text-center cursor-pointer transition-colors hover:opacity-80 ${isPri ? "bg-blue-500 text-white font-bold" : (isNg ? "bg-red-500 text-white font-bold" : "bg-white text-gray-600")}`}
+                                >
+                                  {isPri ? "優先" : (isNg ? "NG" : "-")}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
                     </table>
                   </div>
                 ) : (
