@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
+// ★ Excel出力用ライブラリの読み込み
+import * as XLSX from 'xlsx';
 
 // --- 初期データ定義 ---
 const INITIAL_CONFIG = {
@@ -30,13 +32,12 @@ const INITIAL_CONFIG = {
   ]
 };
 
-// ★色分け設定 (v11新機能)
 const SUBJECT_COLORS = {
-  "英語": "bg-red-100",   // ピンク系
-  "数学": "bg-blue-100",  // 青系
-  "国語": "bg-yellow-100",// 黄色系
-  "理科": "bg-green-100", // 緑系
-  "社会": "bg-purple-100" // 紫系
+  "英語": "bg-red-100",
+  "数学": "bg-blue-100",
+  "国語": "bg-yellow-100",
+  "理科": "bg-green-100",
+  "社会": "bg-purple-100"
 };
 
 const toCircleNum = (num) => {
@@ -340,13 +341,49 @@ export default function ScheduleApp() {
     alert("適用しました！");
   };
 
+  // --- ★ Excel出力機能 (v12) ---
+  const handleDownloadExcel = () => {
+    // 1. ヘッダー行を作成
+    const headerRow = ["日付", "時限", ...config.classes];
+    const dataRows = [];
+
+    // 2. データ行を作成
+    config.dates.forEach(date => {
+      config.periods.forEach(period => {
+        const row = [date, period];
+        config.classes.forEach(cls => {
+          const key = `${date}-${period}-${cls}`;
+          const entry = schedule[key];
+          if (entry && entry.subject && entry.teacher) {
+            row.push(`${entry.subject}\n${entry.teacher}`); // セル内で改行
+          } else {
+            row.push("");
+          }
+        });
+        dataRows.push(row);
+      });
+    });
+
+    // 3. ワークブック作成
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+
+    // セルの幅を少し広げる
+    ws['!cols'] = [{ wch: 15 }, { wch: 15 }, ...config.classes.map(() => ({ wch: 20 }))];
+
+    XLSX.utils.book_append_sheet(wb, ws, "時間割");
+
+    // 4. ダウンロード実行
+    XLSX.writeFile(wb, `時間割_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   const handleSaveJson = () => {
-    const saveData = { version: 11, config, schedule };
+    const saveData = { version: 12, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v11_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v12_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -378,10 +415,13 @@ export default function ScheduleApp() {
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v11</h1>
-          <p className="text-sm text-gray-600">科目別色分け機能搭載</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v12</h1>
+          <p className="text-sm text-gray-600">Excel出力機能搭載</p>
         </div>
         <div className="flex gap-2">
+           {/* ★ Excel出力ボタン */}
+           <button onClick={handleDownloadExcel} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800 shadow flex items-center gap-2">📊 Excel出力</button>
+           
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow flex items-center gap-2">📊 集計</button>
            <button onClick={() => setShowConfig(!showConfig)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 shadow flex items-center gap-2">⚙️ 設定</button>
            <button onClick={generateSchedule} disabled={isGenerating} className={`px-4 py-2 text-white rounded shadow flex items-center gap-2 ${isGenerating ? "bg-purple-400 cursor-wait" : "bg-purple-600 hover:bg-purple-700"}`}>
@@ -547,14 +587,12 @@ export default function ScheduleApp() {
                     const isCountOver = maxCount > 0 && order > maxCount;
                     const filteredTeachers = currentSubject ? config.teachers.filter(t => t.subjects.includes(currentSubject)) : config.teachers;
 
-                    // ★v11 色分けロジック
-                    const subjectColor = SUBJECT_COLORS[currentSubject] || "bg-white"; // デフォルト白
-                    const cellBgColor = isTeacherConflict ? "bg-red-200" : subjectColor; // エラー時は赤優先
+                    const subjectColor = SUBJECT_COLORS[currentSubject] || "bg-white"; 
+                    const cellBgColor = isTeacherConflict ? "bg-red-200" : subjectColor; 
                     const borderColor = isTeacherConflict ? "border-red-400 border-2" : "border-gray-200 border";
 
                     return (
                       <td key={cls} className={`p-2 border-r last:border-0`}>
-                        {/* 背景色を適用するdiv */}
                         <div className={`flex flex-col gap-2 p-2 rounded ${borderColor} ${cellBgColor}`}>
                           <div className="relative">
                             <select 
