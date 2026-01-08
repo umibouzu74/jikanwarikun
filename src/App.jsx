@@ -1,21 +1,40 @@
 import React, { useState, useMemo, useRef } from 'react';
 
-// --- 初期データ定義 ---
+// --- 初期データ定義 (v10: 講師リスト更新版) ---
 const INITIAL_CONFIG = {
   // 6日間 = 18コマ
   dates: ["12/25(木)", "12/26(金)", "12/27(土)", "1/4(日)", "1/6(火)", "1/7(水)"],
   periods: ["1限 (13:00~)", "2限 (14:10~)", "3限 (15:20~)"],
   classes: ["Sクラス", "Aクラス", "Bクラス", "Cクラス"],
   subjects: ["英語", "数学", "国語", "理科", "社会"],
-  // 合計18コマの内訳設定
+  // 合計18コマの内訳
   subjectCounts: { "英語": 4, "数学": 4, "国語": 3, "理科": 4, "社会": 3 },
   
+  // ★ここで初期講師を設定
   teachers: [
+    // 英語
     { name: "堀上", subjects: ["英語"], ngSlots: [], ngClasses: [] },
+    { name: "石原", subjects: ["英語"], ngSlots: [], ngClasses: [] },
+    { name: "高松", subjects: ["英語"], ngSlots: [], ngClasses: [] },
+    { name: "南條", subjects: ["英語"], ngSlots: [], ngClasses: [] },
+    // 数学
     { name: "片岡", subjects: ["数学"], ngSlots: [], ngClasses: [] },
-    { name: "井上", subjects: ["社会"], ngSlots: [], ngClasses: [] },
-    { name: "半田", subjects: ["数学", "理科"], ngSlots: [], ngClasses: [] },
+    { name: "半田", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    { name: "香川", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    { name: "江本", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    { name: "河野", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    { name: "杉原", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    { name: "奥村", subjects: ["数学"], ngSlots: [], ngClasses: [] },
+    // 国語
+    { name: "小松", subjects: ["国語"], ngSlots: [], ngClasses: [] },
     { name: "松川", subjects: ["国語"], ngSlots: [], ngClasses: [] },
+    // 理科
+    { name: "三宮", subjects: ["理科"], ngSlots: [], ngClasses: [] },
+    { name: "滝澤", subjects: ["理科"], ngSlots: [], ngClasses: [] },
+    // 社会
+    { name: "井上", subjects: ["社会"], ngSlots: [], ngClasses: [] },
+    { name: "野口", subjects: ["社会"], ngSlots: [], ngClasses: [] },
+    // 予備 (すべての科目を担当可)
     { name: "未定", subjects: ["英語", "数学", "国語", "理科", "社会"], ngSlots: [], ngClasses: [] }
   ]
 };
@@ -205,7 +224,7 @@ export default function ScheduleApp() {
     );
   };
 
-  // --- ★自動生成ロジック (v9: 賢い優先順位付けと上限緩和) ---
+  // --- 自動生成ロジック ---
   const generateSchedule = () => {
     setIsGenerating(true);
     setTimeout(() => {
@@ -238,9 +257,9 @@ export default function ScheduleApp() {
         }
       });
 
-      // フリーズ防止用のカウンタ (上限を大幅アップ)
+      // フリーズ防止用のカウンタ
       let iterationCount = 0;
-      const MAX_ITERATIONS = 5000000; // 500万回まで許容
+      const MAX_ITERATIONS = 5000000; 
 
       const solve = (index, tempSchedule, tempCounts) => {
         iterationCount++;
@@ -255,14 +274,13 @@ export default function ScheduleApp() {
         const slot = slots[index];
         const { date, period, cls, key } = slot;
         
-        // ★改善点: ランダムではなく「残り回数が多い科目」を優先的に試す
-        // これにより、数珠つなぎ的に解ける確率が上がる
+        // 優先順位付け: 残り回数が多い科目から
         const sortedSubjects = [...config.subjects].sort((a, b) => {
           const maxA = config.subjectCounts[a] || 0;
           const maxB = config.subjectCounts[b] || 0;
           const remA = maxA - (tempCounts[cls][a] || 0);
           const remB = maxB - (tempCounts[cls][b] || 0);
-          return remB - remA; // 残りが多い順
+          return remB - remA; 
         });
 
         for (const subject of sortedSubjects) {
@@ -271,7 +289,6 @@ export default function ScheduleApp() {
           const maxCount = config.subjectCounts[subject] || 0;
           if ((tempCounts[cls][subject] || 0) >= maxCount) continue;
 
-          // 1日1回制限
           let isDailyDup = false;
           config.periods.forEach(p => {
              const checkKey = `${date}-${p}-${cls}`;
@@ -279,7 +296,6 @@ export default function ScheduleApp() {
           });
           if (isDailyDup) continue;
 
-          // 講師選択
           const validTeachers = config.teachers.filter(t => {
             if (!t.subjects.includes(subject)) return false;
             if (t.ngClasses && t.ngClasses.includes(cls)) return false; 
@@ -287,7 +303,6 @@ export default function ScheduleApp() {
             return true;
           });
           
-          // 講師はランダム順でOK
           const shuffledTeachers = [...validTeachers].sort(() => Math.random() - 0.5);
 
           for (const teacherObj of shuffledTeachers) {
@@ -307,7 +322,6 @@ export default function ScheduleApp() {
              solve(index + 1, tempSchedule, tempCounts);
 
              if (solutions.length >= 3) return;
-             
              delete tempSchedule[key];
              tempCounts[cls][subject] -= 1;
           }
@@ -315,16 +329,15 @@ export default function ScheduleApp() {
       };
 
       solve(0, JSON.parse(JSON.stringify(schedule)), JSON.parse(JSON.stringify(currentCounts)));
-      
       setGeneratedPatterns(solutions);
       setIsGenerating(false);
 
       if (iterationCount > MAX_ITERATIONS) {
-        alert("計算回数が上限を超えました。\n\n【アドバイス】\nなんでも担当できる講師（a, i, u...）が多すぎると、逆に計算が複雑になりすぎてしまいます。\n\n一時的に「未定」のような万能講師を1〜2名だけにして、他のダミー講師を削除してから再試行してみてください。");
+        alert("計算回数が上限を超えました。条件を少し緩和して再試行してください。");
       } else if (solutions.length === 0) {
         alert("条件を満たすパターンが見つかりませんでした。");
       }
-    }, 100); // UIブロック回避
+    }, 100);
   };
 
   const applyPattern = (pattern) => {
@@ -334,12 +347,12 @@ export default function ScheduleApp() {
   };
 
   const handleSaveJson = () => {
-    const saveData = { version: 9, config, schedule };
+    const saveData = { version: 10, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v9_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v10_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -371,8 +384,8 @@ export default function ScheduleApp() {
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v9</h1>
-          <p className="text-sm text-gray-600">自動生成ロジック強化版</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v10</h1>
+          <p className="text-sm text-gray-600">最終完成版</p>
         </div>
         <div className="flex gap-2">
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow flex items-center gap-2">📊 集計</button>
