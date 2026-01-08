@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useRef } from 'react';
-// ★ Excel出力用ライブラリの読み込み
 import * as XLSX from 'xlsx';
 
 // --- 初期データ定義 ---
@@ -58,11 +57,37 @@ export default function ScheduleApp() {
   // --- 操作関数 ---
   const handleAssign = (date, period, className, type, value) => {
     const key = `${date}-${period}-${className}`;
+    // ロックされていたら変更不可
+    if (schedule[key]?.locked) return;
+
     if (type === 'subject') {
-      setSchedule(prev => ({ ...prev, [key]: { subject: value, teacher: "" } }));
+      setSchedule(prev => ({ ...prev, [key]: { ...prev[key], subject: value, teacher: "" } }));
     } else {
       setSchedule(prev => ({ ...prev, [key]: { ...prev[key], [type]: value } }));
     }
+  };
+
+  // ★ v13 新機能: ロック切り替え
+  const toggleLock = (date, period, className) => {
+    const key = `${date}-${period}-${className}`;
+    setSchedule(prev => ({
+      ...prev,
+      [key]: { ...prev[key], locked: !prev[key]?.locked }
+    }));
+  };
+
+  // ★ v13 新機能: 未ロックのみクリア
+  const handleClearUnlocked = () => {
+    if (!window.confirm("ロックされていないコマを全て削除しますか？\n（ロックされたコマは残ります）")) return;
+    setSchedule(prev => {
+      const next = {};
+      Object.keys(prev).forEach(key => {
+        if (prev[key].locked) {
+          next[key] = prev[key];
+        }
+      });
+      return next;
+    });
   };
 
   const handleListConfigChange = (key, valueString) => {
@@ -234,6 +259,7 @@ export default function ScheduleApp() {
         config.periods.forEach(period => {
           config.classes.forEach(cls => {
             const key = `${date}-${period}-${cls}`;
+            // 既に埋まっている、またはロックされているマスはスキップ
             if (!schedule[key] || !schedule[key].subject || !schedule[key].teacher) {
               slots.push({ key, date, period, cls });
             }
@@ -341,13 +367,9 @@ export default function ScheduleApp() {
     alert("適用しました！");
   };
 
-  // --- ★ Excel出力機能 (v12) ---
   const handleDownloadExcel = () => {
-    // 1. ヘッダー行を作成
     const headerRow = ["日付", "時限", ...config.classes];
     const dataRows = [];
-
-    // 2. データ行を作成
     config.dates.forEach(date => {
       config.periods.forEach(period => {
         const row = [date, period];
@@ -355,7 +377,7 @@ export default function ScheduleApp() {
           const key = `${date}-${period}-${cls}`;
           const entry = schedule[key];
           if (entry && entry.subject && entry.teacher) {
-            row.push(`${entry.subject}\n${entry.teacher}`); // セル内で改行
+            row.push(`${entry.subject}\n${entry.teacher}`);
           } else {
             row.push("");
           }
@@ -363,27 +385,20 @@ export default function ScheduleApp() {
         dataRows.push(row);
       });
     });
-
-    // 3. ワークブック作成
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
-
-    // セルの幅を少し広げる
     ws['!cols'] = [{ wch: 15 }, { wch: 15 }, ...config.classes.map(() => ({ wch: 20 }))];
-
     XLSX.utils.book_append_sheet(wb, ws, "時間割");
-
-    // 4. ダウンロード実行
     XLSX.writeFile(wb, `時間割_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   const handleSaveJson = () => {
-    const saveData = { version: 12, config, schedule };
+    const saveData = { version: 13, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v12_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v13_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -415,12 +430,13 @@ export default function ScheduleApp() {
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v12</h1>
-          <p className="text-sm text-gray-600">Excel出力機能搭載</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v13</h1>
+          <p className="text-sm text-gray-600">ロック機能＆部分クリア</p>
         </div>
         <div className="flex gap-2">
-           {/* ★ Excel出力ボタン */}
            <button onClick={handleDownloadExcel} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800 shadow flex items-center gap-2">📊 Excel出力</button>
+           {/* ★ クリアボタン */}
+           <button onClick={handleClearUnlocked} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow flex items-center gap-2" title="ロックされていない箇所を削除">🗑️ 未ロック削除</button>
            
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow flex items-center gap-2">📊 集計</button>
            <button onClick={() => setShowConfig(!showConfig)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 shadow flex items-center gap-2">⚙️ 設定</button>
@@ -581,6 +597,8 @@ export default function ScheduleApp() {
                     const currentData = schedule[key] || {};
                     const currentSubject = currentData.subject || "";
                     const currentTeacher = currentData.teacher || "";
+                    const isLocked = currentData.locked || false; // ロック状態
+                    
                     const isTeacherConflict = currentTeacher && analysis.conflictMap[`${date}-${period}-${currentTeacher}`];
                     const order = analysis.subjectOrders[key] || 0;
                     const maxCount = config.subjectCounts?.[currentSubject] || 0;
@@ -589,33 +607,45 @@ export default function ScheduleApp() {
 
                     const subjectColor = SUBJECT_COLORS[currentSubject] || "bg-white"; 
                     const cellBgColor = isTeacherConflict ? "bg-red-200" : subjectColor; 
-                    const borderColor = isTeacherConflict ? "border-red-400 border-2" : "border-gray-200 border";
+                    const borderColor = isTeacherConflict ? "border-red-400 border-2" : (isLocked ? "border-gray-500 border-2" : "border-gray-200 border");
 
                     return (
                       <td key={cls} className={`p-2 border-r last:border-0`}>
-                        <div className={`flex flex-col gap-2 p-2 rounded ${borderColor} ${cellBgColor}`}>
-                          <div className="relative">
-                            <select 
-                              className={`w-full font-medium focus:outline-none cursor-pointer appearance-none ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} bg-transparent`}
-                              onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)}
-                              value={currentSubject}
-                            >
-                              <option value="" className="text-gray-400">- 科目 -</option>
-                              {config.subjects.map(s => {
-                                const isUsedToday = analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0;
-                                const isSelf = currentSubject === s; 
-                                const isDailyDup = isUsedToday && !isSelf;
-                                return <option key={s} value={s} disabled={isDailyDup} className={isDailyDup ? "bg-gray-200 text-gray-400" : ""}>{s} {isDailyDup ? "(1日1回済)" : ""}</option>;
-                              })}
-                            </select>
-                            {currentSubject && <div className={`absolute right-0 top-0 text-xs px-1 rounded pointer-events-none ${isCountOver ? "bg-red-500 text-white" : "bg-white/80 text-blue-800 border"}`}>{toCircleNum(order)} {isCountOver && "⚠"}</div>}
+                        <div className={`flex flex-col gap-2 p-2 rounded ${borderColor} ${cellBgColor} ${isLocked ? "bg-opacity-100 shadow-inner" : "bg-opacity-90"}`}>
+                          
+                          {/* ★ ロックボタン (左上に配置) */}
+                          <div className="flex justify-between items-start">
+                             <div className="relative flex-1">
+                                <select 
+                                  className={`w-full font-medium focus:outline-none cursor-pointer appearance-none ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} bg-transparent ${isLocked ? "pointer-events-none" : ""}`}
+                                  onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)}
+                                  value={currentSubject}
+                                >
+                                  <option value="" className="text-gray-400">- 科目 -</option>
+                                  {config.subjects.map(s => {
+                                    const isUsedToday = analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0;
+                                    const isSelf = currentSubject === s; 
+                                    const isDailyDup = isUsedToday && !isSelf;
+                                    return <option key={s} value={s} disabled={isDailyDup} className={isDailyDup ? "bg-gray-200 text-gray-400" : ""}>{s} {isDailyDup ? "(1日1回済)" : ""}</option>;
+                                  })}
+                                </select>
+                                {currentSubject && <div className={`absolute right-0 top-0 text-xs px-1 rounded pointer-events-none ${isCountOver ? "bg-red-500 text-white" : "bg-white/80 text-blue-800 border"}`}>{toCircleNum(order)} {isCountOver && "⚠"}</div>}
+                             </div>
+                             {/* ロックアイコン */}
+                             <button 
+                               onClick={() => toggleLock(date, period, cls)} 
+                               className="text-sm ml-1 focus:outline-none hover:scale-110 transition-transform"
+                               title={isLocked ? "ロック中 (解除するにはクリック)" : "クリックでロック"}
+                             >
+                               {isLocked ? "🔒" : "🔓"}
+                             </button>
                           </div>
                           
                           <select 
-                            className={`w-full p-1 rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${!currentSubject ? "opacity-50" : ""}`}
+                            className={`w-full p-1 rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${(!currentSubject || isLocked) ? "opacity-50 pointer-events-none" : ""}`}
                             onChange={(e) => handleAssign(date, period, cls, 'teacher', e.target.value)}
                             value={currentTeacher}
-                            disabled={!currentSubject}
+                            disabled={!currentSubject || isLocked}
                           >
                             <option value="">{currentSubject ? "- 講師 -" : "(科目未定)"}</option>
                             {filteredTeachers.map(t => {
