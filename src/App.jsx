@@ -44,12 +44,10 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-// ★ ローカルストレージのキー
 const STORAGE_KEY_SCHEDULE = 'winter_schedule_data';
 const STORAGE_KEY_CONFIG = 'winter_schedule_config';
 
 export default function ScheduleApp() {
-  // ★ v16: 初期値をローカルストレージから読み込む
   const [schedule, setSchedule] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY_SCHEDULE);
     return saved ? JSON.parse(saved) : {};
@@ -60,7 +58,7 @@ export default function ScheduleApp() {
     return saved ? JSON.parse(saved) : INITIAL_CONFIG;
   });
 
-  const [history, setHistory] = useState([{}]); // 履歴はセッション毎にリセット（永続化しない）
+  const [history, setHistory] = useState([{}]);
   const [historyIndex, setHistoryIndex] = useState(0);
   
   const [showConfig, setShowConfig] = useState(false);
@@ -68,11 +66,10 @@ export default function ScheduleApp() {
   const [editingNgIndex, setEditingNgIndex] = useState(null);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [saveStatus, setSaveStatus] = useState("✅ 自動保存済み"); // 保存ステータス表示用
+  const [saveStatus, setSaveStatus] = useState("✅ 自動保存済み");
   
   const fileInputRef = useRef(null);
 
-  // ★ v16: 変更があるたびに自動保存
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_SCHEDULE, JSON.stringify(schedule));
     setSaveStatus("💾 保存中...");
@@ -83,7 +80,6 @@ export default function ScheduleApp() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
   }, [config]);
-
 
   const updateScheduleWithHistory = (newSchedule) => {
     const nextHistory = history.slice(0, historyIndex + 1);
@@ -110,13 +106,12 @@ export default function ScheduleApp() {
     }
   };
 
-  // 履歴初期化（初回ロード時などに履歴の先頭を現在の状態にする）
   useEffect(() => {
     if (history.length === 1 && Object.keys(history[0]).length === 0 && Object.keys(schedule).length > 0) {
       setHistory([schedule]);
       setHistoryIndex(0);
     }
-  }, []); // 初回のみチェック
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -164,7 +159,6 @@ export default function ScheduleApp() {
     updateScheduleWithHistory(newSchedule);
   };
 
-  // ★ v16: 全データ初期化（緊急リセット用）
   const handleResetAll = () => {
     if (!window.confirm("【警告】すべてのデータを消去し、初期状態に戻します。\n本当によろしいですか？")) return;
     localStorage.removeItem(STORAGE_KEY_SCHEDULE);
@@ -506,22 +500,23 @@ export default function ScheduleApp() {
   };
 
   const handleSaveJson = () => {
-    const saveData = { version: 16, config, schedule };
+    const saveData = { version: 17, config, schedule };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `schedule_v16_${new Date().toISOString().slice(0,10)}.json`;
+    link.download = `schedule_v17_${new Date().toISOString().slice(0,10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen font-sans">
+      {/* --- ヘッダー --- */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v16</h1>
-          <p className="text-sm text-gray-600">自動保存機能搭載</p>
+          <h1 className="text-2xl font-bold text-gray-800">冬期講習 時間割エディタ v17</h1>
+          <p className="text-sm text-gray-600">UI改善: 固定ヘッダー & 設定モーダル</p>
         </div>
         <div className="flex items-center gap-2">
            <span className="text-xs text-green-600 font-bold mr-2">{saveStatus}</span>
@@ -532,7 +527,7 @@ export default function ScheduleApp() {
            <button onClick={handleDownloadExcel} className="px-4 py-2 bg-green-700 text-white rounded hover:bg-green-800 shadow flex items-center gap-2">📊 Excel出力</button>
            <button onClick={handleClearUnlocked} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow flex items-center gap-2">🗑️ 未ロック削除</button>
            <button onClick={() => setShowSummary(!showSummary)} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow flex items-center gap-2">📊 集計</button>
-           <button onClick={() => setShowConfig(!showConfig)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 shadow flex items-center gap-2">⚙️ 設定</button>
+           <button onClick={() => setShowConfig(true)} className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 shadow flex items-center gap-2">⚙️ 設定</button>
            <button onClick={generateSchedule} disabled={isGenerating} className={`px-4 py-2 text-white rounded shadow flex items-center gap-2 ${isGenerating ? "bg-purple-400 cursor-wait" : "bg-purple-600 hover:bg-purple-700"}`}>
              {isGenerating ? "計算中..." : "🧙‍♂️ 自動作成"}
            </button>
@@ -549,6 +544,7 @@ export default function ScheduleApp() {
         </div>
       )}
 
+      {/* --- 自動生成結果 (モーダル) --- */}
       {generatedPatterns.length > 0 && (
         <div className="mb-6 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg animate-fade-in">
           <h2 className="font-bold text-lg text-purple-900 mb-2">✨ 生成結果</h2>
@@ -567,193 +563,210 @@ export default function ScheduleApp() {
         </div>
       )}
 
+      {/* --- ★ 設定モーダル (v17: ポップアップ化) --- */}
       {showConfig && (
-        <div className="mb-6 p-4 bg-white border border-gray-300 rounded-lg shadow-sm">
-          <h2 className="font-bold text-lg mb-4 text-gray-700">⚙️ マスタ設定</h2>
-          <button onClick={handleResetAll} className="mb-4 text-xs text-red-500 underline">⚠️ 全データを初期化してリセット</button>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-4">
-              <div><label className="block text-xs font-bold text-gray-500 mb-1">日付</label><textarea className="w-full border p-2 rounded text-sm h-16" value={config.dates.join(", ")} onChange={(e) => handleListConfigChange('dates', e.target.value)} /></div>
-              <div><label className="block text-xs font-bold text-gray-500 mb-1">時限</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.periods.join(", ")} onChange={(e) => handleListConfigChange('periods', e.target.value)} /></div>
-              <div><label className="block text-xs font-bold text-gray-500 mb-1">クラス</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.classes.join(", ")} onChange={(e) => handleListConfigChange('classes', e.target.value)} /></div>
-              <div className="border p-2 rounded bg-yellow-50">
-                <label className="block text-xs font-bold text-gray-700 mb-2">📚 科目ごとの必要コマ数</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {config.subjects.map(subj => (
-                    <div key={subj} className="flex items-center justify-between bg-white p-1 rounded border">
-                      <span className="text-xs font-bold">{subj}</span>
-                      <input type="number" className="w-12 text-right border rounded px-1 text-sm" value={config.subjectCounts?.[subj] || 0} onChange={(e) => handleSubjectCountChange(subj, e.target.value)} />
-                    </div>
-                  ))}
-                </div>
-                 <div className="mt-2"><label className="block text-xs text-gray-500">科目リスト編集</label><textarea className="w-full border p-1 rounded text-xs h-8" value={config.subjects.join(", ")} onChange={(e) => handleListConfigChange('subjects', e.target.value)} /></div>
-              </div>
-            </div>
-
-            <div className="md:col-span-2 border-l pl-4">
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-bold text-gray-700">👤 講師設定</label>
-                <button onClick={addTeacher} className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">+ 講師追加</button>
-              </div>
-              <div className="overflow-y-auto max-h-[400px] border rounded bg-gray-50 p-2 mb-4">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-gray-500">
-                      <th className="p-2 w-20">氏名</th>
-                      <th className="p-2 w-40">担当可能科目</th>
-                      <th className="p-2">NGクラス(行かない)</th>
-                      <th className="p-2 w-20">NG時間</th>
-                      <th className="p-2 w-10">削除</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {config.teachers.map((teacher, tIndex) => (
-                      <tr key={tIndex} className={`border-b ${editingNgIndex === tIndex ? "bg-blue-50" : "bg-white"}`}>
-                        <td className="p-2 font-bold">{teacher.name}</td>
-                        <td className="p-2">
-                          <div className="flex flex-wrap gap-2">
-                            {config.subjects.map(subject => (
-                              <label key={subject} className="flex items-center gap-1 cursor-pointer bg-gray-50 px-1 rounded border">
-                                <input type="checkbox" checked={teacher.subjects.includes(subject)} onChange={() => toggleTeacherSubject(tIndex, subject)} />
-                                <span className="text-xs">{subject}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="p-2">
-                          <div className="flex flex-wrap gap-2">
-                            {config.classes.map(cls => (
-                              <label key={cls} className={`flex items-center gap-1 cursor-pointer px-1 rounded border ${teacher.ngClasses?.includes(cls) ? "bg-red-100 border-red-200 text-red-700" : "bg-white border-gray-200"}`}>
-                                <input type="checkbox" checked={teacher.ngClasses?.includes(cls) || false} onChange={() => toggleTeacherNgClass(tIndex, cls)} />
-                                <span className="text-xs">{cls}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="p-2 text-center">
-                          <button onClick={() => setEditingNgIndex(editingNgIndex === tIndex ? null : tIndex)} className={`text-xs px-2 py-1 rounded border ${editingNgIndex === tIndex ? "bg-blue-600 text-white" : "bg-white"}`}>
-                            {editingNgIndex === tIndex ? "設定中" : "NG時間"}
-                          </button>
-                        </td>
-                        <td className="p-2 text-center"><button onClick={() => removeTeacher(tIndex)} className="text-red-500 hover:text-red-700">×</button></td>
-                      </tr>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto p-6 relative animate-fade-in">
+            <button onClick={() => setShowConfig(false)} className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-xl font-bold">✕ 閉じる</button>
+            <h2 className="font-bold text-xl mb-4 text-gray-700 border-b pb-2">⚙️ マスタ設定</h2>
+            <button onClick={handleResetAll} className="mb-4 text-xs text-red-500 underline">⚠️ 全データを初期化してリセット</button>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-4">
+                <div><label className="block text-xs font-bold text-gray-500 mb-1">日付</label><textarea className="w-full border p-2 rounded text-sm h-16" value={config.dates.join(", ")} onChange={(e) => handleListConfigChange('dates', e.target.value)} /></div>
+                <div><label className="block text-xs font-bold text-gray-500 mb-1">時限</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.periods.join(", ")} onChange={(e) => handleListConfigChange('periods', e.target.value)} /></div>
+                <div><label className="block text-xs font-bold text-gray-500 mb-1">クラス</label><textarea className="w-full border p-2 rounded text-sm h-12" value={config.classes.join(", ")} onChange={(e) => handleListConfigChange('classes', e.target.value)} /></div>
+                <div className="border p-2 rounded bg-yellow-50">
+                  <label className="block text-xs font-bold text-gray-700 mb-2">📚 科目ごとの必要コマ数</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {config.subjects.map(subj => (
+                      <div key={subj} className="flex items-center justify-between bg-white p-1 rounded border">
+                        <span className="text-xs font-bold">{subj}</span>
+                        <input type="number" className="w-12 text-right border rounded px-1 text-sm" value={config.subjectCounts?.[subj] || 0} onChange={(e) => handleSubjectCountChange(subj, e.target.value)} />
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-              {editingNgIndex !== null && config.teachers[editingNgIndex] && (
-                <div className="bg-blue-50 border-2 border-blue-200 p-3 rounded-lg">
-                  <h3 className="font-bold text-blue-800 mb-2">📅 {config.teachers[editingNgIndex].name}先生のNG時間設定</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse bg-white text-sm">
-                      <thead>
-                        <tr><th className="border p-2 bg-gray-100 w-20"></th>{config.periods.map(p => <th key={p} className="border p-2 bg-gray-100 font-normal">{p}</th>)}</tr>
-                      </thead>
-                      <tbody>
-                        {config.dates.map(date => (
-                          <tr key={date}>
-                            <td className="border p-2 bg-gray-50 font-bold">{date}</td>
-                            {config.periods.map(period => {
-                              const key = `${date}-${period}`;
-                              const isNg = config.teachers[editingNgIndex].ngSlots?.includes(key);
-                              return <td key={key} onClick={() => toggleTeacherNg(editingNgIndex, date, period)} className={`border p-2 text-center cursor-pointer ${isNg ? "bg-red-100 text-red-600 font-bold" : "hover:bg-blue-50 text-gray-400"}`}>{isNg ? "NG" : "○"}</td>;
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
+                   <div className="mt-2"><label className="block text-xs text-gray-500">科目リスト編集</label><textarea className="w-full border p-1 rounded text-xs h-8" value={config.subjects.join(", ")} onChange={(e) => handleListConfigChange('subjects', e.target.value)} /></div>
                 </div>
-              )}
+              </div>
+
+              <div className="md:col-span-2 border-l pl-4">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-bold text-gray-700">👤 講師設定</label>
+                  <button onClick={addTeacher} className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600">+ 講師追加</button>
+                </div>
+                <div className="overflow-y-auto max-h-[400px] border rounded bg-gray-50 p-2 mb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="p-2 w-20">氏名</th>
+                        <th className="p-2 w-40">担当可能科目</th>
+                        <th className="p-2">NGクラス(行かない)</th>
+                        <th className="p-2 w-20">NG時間</th>
+                        <th className="p-2 w-10">削除</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {config.teachers.map((teacher, tIndex) => (
+                        <tr key={tIndex} className={`border-b ${editingNgIndex === tIndex ? "bg-blue-50" : "bg-white"}`}>
+                          <td className="p-2 font-bold">{teacher.name}</td>
+                          <td className="p-2">
+                            <div className="flex flex-wrap gap-2">
+                              {config.subjects.map(subject => (
+                                <label key={subject} className="flex items-center gap-1 cursor-pointer bg-gray-50 px-1 rounded border">
+                                  <input type="checkbox" checked={teacher.subjects.includes(subject)} onChange={() => toggleTeacherSubject(tIndex, subject)} />
+                                  <span className="text-xs">{subject}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-2">
+                            <div className="flex flex-wrap gap-2">
+                              {config.classes.map(cls => (
+                                <label key={cls} className={`flex items-center gap-1 cursor-pointer px-1 rounded border ${teacher.ngClasses?.includes(cls) ? "bg-red-100 border-red-200 text-red-700" : "bg-white border-gray-200"}`}>
+                                  <input type="checkbox" checked={teacher.ngClasses?.includes(cls) || false} onChange={() => toggleTeacherNgClass(tIndex, cls)} />
+                                  <span className="text-xs">{cls}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-2 text-center">
+                            <button onClick={() => setEditingNgIndex(editingNgIndex === tIndex ? null : tIndex)} className={`text-xs px-2 py-1 rounded border ${editingNgIndex === tIndex ? "bg-blue-600 text-white" : "bg-white"}`}>
+                              {editingNgIndex === tIndex ? "設定中" : "NG時間"}
+                            </button>
+                          </td>
+                          <td className="p-2 text-center"><button onClick={() => removeTeacher(tIndex)} className="text-red-500 hover:text-red-700">×</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {editingNgIndex !== null && config.teachers[editingNgIndex] && (
+                  <div className="bg-blue-50 border-2 border-blue-200 p-3 rounded-lg">
+                    <h3 className="font-bold text-blue-800 mb-2">📅 {config.teachers[editingNgIndex].name}先生のNG時間設定</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse bg-white text-sm">
+                        <thead>
+                          <tr><th className="border p-2 bg-gray-100 w-20"></th>{config.periods.map(p => <th key={p} className="border p-2 bg-gray-100 font-normal">{p}</th>)}</tr>
+                        </thead>
+                        <tbody>
+                          {config.dates.map(date => (
+                            <tr key={date}>
+                              <td className="border p-2 bg-gray-50 font-bold">{date}</td>
+                              {config.periods.map(period => {
+                                const key = `${date}-${period}`;
+                                const isNg = config.teachers[editingNgIndex].ngSlots?.includes(key);
+                                return <td key={key} onClick={() => toggleTeacherNg(editingNgIndex, date, period)} className={`border p-2 text-center cursor-pointer ${isNg ? "bg-red-100 text-red-600 font-bold" : "hover:bg-blue-50 text-gray-400"}`}>{isNg ? "NG" : "○"}</td>;
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
       
-      <div className="overflow-x-auto shadow-lg rounded-lg">
-        <table className="border-collapse w-full bg-white text-sm text-left">
-          <thead>
-            <tr className="bg-gray-800 text-white">
-              <th className="p-3 w-24 border-r border-gray-600">日付</th>
-              <th className="p-3 w-24 border-r border-gray-600">時限</th>
+      {/* --- メイン時間割テーブル --- */}
+      {/* ★ v17: テーブルコンテナの最大高さを指定し、スクロール可能にする */}
+      <div className="overflow-auto shadow-lg rounded-lg border border-gray-300 max-h-[80vh]">
+        <table className="border-collapse w-full bg-white text-sm text-left relative">
+          {/* ★ v17: ヘッダー固定 (sticky top-0 z-20) */}
+          <thead className="sticky top-0 z-30 bg-gray-800 text-white shadow-md">
+            <tr>
+              <th className="p-3 w-24 border-r border-gray-600 sticky left-0 z-40 bg-gray-800">日付</th>
+              <th className="p-3 w-24 border-r border-gray-600 sticky left-24 z-30 bg-gray-800">時限</th>
               {config.classes.map(cls => <th key={cls} className="p-3 min-w-[150px] border-r border-gray-600 last:border-0">{cls}</th>)}
             </tr>
           </thead>
           <tbody>
             {config.dates.map(date => (
-              config.periods.map((period, pIndex) => (
-                <tr key={`${date}-${period}`} className="border-b hover:bg-gray-50">
-                  {pIndex === 0 && <td rowSpan={config.periods.length} className="p-3 font-bold align-top bg-gray-100 border-r">{date}</td>}
-                  <td className="p-3 border-r bg-gray-50 text-gray-700">{period}</td>
-                  
-                  {config.classes.map(cls => {
-                    const key = `${date}-${period}-${cls}`;
-                    const currentData = schedule[key] || {};
-                    const currentSubject = currentData.subject || "";
-                    const currentTeacher = currentData.teacher || "";
-                    const isLocked = currentData.locked || false; 
+              config.periods.map((period, pIndex) => {
+                // ★ v17: 1日の終わりかどうか判定 (太い境界線用)
+                const isDayEnd = pIndex === config.periods.length - 1;
+                const borderClass = isDayEnd ? "border-b-4 border-gray-400" : "border-b hover:bg-gray-50";
+
+                return (
+                  <tr key={`${date}-${period}`} className={borderClass}>
+                    {pIndex === 0 && (
+                      // ★ v17: 日付列固定 (sticky left-0 z-20)
+                      <td rowSpan={config.periods.length} className="p-3 font-bold align-top bg-gray-100 border-r sticky left-0 z-20 shadow-sm border-b-4 border-gray-400">{date}</td>
+                    )}
+                    {/* ★ v17: 時限列固定 (sticky left-24) */}
+                    <td className={`p-3 border-r bg-gray-50 text-gray-700 sticky left-24 z-10 shadow-sm ${isDayEnd ? "border-b-4 border-gray-400" : ""}`}>{period}</td>
                     
-                    const isTeacherConflict = currentTeacher && analysis.conflictMap[`${date}-${period}-${currentTeacher}`];
-                    const order = analysis.subjectOrders[key] || 0;
-                    const maxCount = config.subjectCounts?.[currentSubject] || 0;
-                    const isCountOver = maxCount > 0 && order > maxCount;
-                    const filteredTeachers = currentSubject ? config.teachers.filter(t => t.subjects.includes(currentSubject)) : config.teachers;
+                    {config.classes.map(cls => {
+                      const key = `${date}-${period}-${cls}`;
+                      const currentData = schedule[key] || {};
+                      const currentSubject = currentData.subject || "";
+                      const currentTeacher = currentData.teacher || "";
+                      const isLocked = currentData.locked || false; 
+                      
+                      const isTeacherConflict = currentTeacher && analysis.conflictMap[`${date}-${period}-${currentTeacher}`];
+                      const order = analysis.subjectOrders[key] || 0;
+                      const maxCount = config.subjectCounts?.[currentSubject] || 0;
+                      const isCountOver = maxCount > 0 && order > maxCount;
+                      const filteredTeachers = currentSubject ? config.teachers.filter(t => t.subjects.includes(currentSubject)) : config.teachers;
 
-                    const subjectColor = SUBJECT_COLORS[currentSubject] || "bg-white"; 
-                    const cellBgColor = isTeacherConflict ? "bg-red-200" : subjectColor; 
-                    const borderColor = isTeacherConflict ? "border-red-400 border-2" : (isLocked ? "border-gray-500 border-2" : "border-gray-200 border");
+                      const subjectColor = SUBJECT_COLORS[currentSubject] || "bg-white"; 
+                      const cellBgColor = isTeacherConflict ? "bg-red-200" : subjectColor; 
+                      const borderColor = isTeacherConflict ? "border-red-400 border-2" : (isLocked ? "border-gray-500 border-2" : "border-gray-200 border");
 
-                    return (
-                      <td key={cls} className={`p-2 border-r last:border-0`}>
-                        <div className={`flex flex-col gap-2 p-2 rounded ${borderColor} ${cellBgColor} ${isLocked ? "bg-opacity-100 shadow-inner" : "bg-opacity-90"}`}>
-                          <div className="flex justify-between items-start">
-                             <div className="relative flex-1">
-                                <select 
-                                  className={`w-full font-medium focus:outline-none cursor-pointer appearance-none ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} bg-transparent ${isLocked ? "pointer-events-none" : ""}`}
-                                  onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)}
-                                  value={currentSubject}
-                                >
-                                  <option value="" className="text-gray-400">- 科目 -</option>
-                                  {config.subjects.map(s => {
-                                    const isUsedToday = analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0;
-                                    const isSelf = currentSubject === s; 
-                                    const isDailyDup = isUsedToday && !isSelf;
-                                    return <option key={s} value={s} disabled={isDailyDup} className={isDailyDup ? "bg-gray-200 text-gray-400" : ""}>{s} {isDailyDup ? "(1日1回済)" : ""}</option>;
-                                  })}
-                                </select>
-                                {currentSubject && <div className={`absolute right-0 top-0 text-xs px-1 rounded pointer-events-none ${isCountOver ? "bg-red-500 text-white" : "bg-white/80 text-blue-800 border"}`}>{toCircleNum(order)} {isCountOver && "⚠"}</div>}
-                             </div>
-                             <button 
-                               onClick={() => toggleLock(date, period, cls)} 
-                               className="text-sm ml-1 focus:outline-none hover:scale-110 transition-transform"
-                               title={isLocked ? "ロック中 (解除するにはクリック)" : "クリックでロック"}
-                             >
-                               {isLocked ? "🔒" : "🔓"}
-                             </button>
+                      return (
+                        <td key={cls} className={`p-2 border-r last:border-0`}>
+                          <div className={`flex flex-col gap-2 p-2 rounded ${borderColor} ${cellBgColor} ${isLocked ? "bg-opacity-100 shadow-inner" : "bg-opacity-90"}`}>
+                            <div className="flex justify-between items-start">
+                               <div className="relative flex-1">
+                                  <select 
+                                    className={`w-full font-medium focus:outline-none cursor-pointer appearance-none ${isCountOver ? "text-red-600 font-bold" : "text-gray-800"} bg-transparent ${isLocked ? "pointer-events-none" : ""}`}
+                                    onChange={(e) => handleAssign(date, period, cls, 'subject', e.target.value)}
+                                    value={currentSubject}
+                                  >
+                                    <option value="" className="text-gray-400">- 科目 -</option>
+                                    {config.subjects.map(s => {
+                                      const isUsedToday = analysis.dailySubjectMap[`${cls}-${date}-${s}`] > 0;
+                                      const isSelf = currentSubject === s; 
+                                      const isDailyDup = isUsedToday && !isSelf;
+                                      return <option key={s} value={s} disabled={isDailyDup} className={isDailyDup ? "bg-gray-200 text-gray-400" : ""}>{s} {isDailyDup ? "(1日1回済)" : ""}</option>;
+                                    })}
+                                  </select>
+                                  {currentSubject && <div className={`absolute right-0 top-0 text-xs px-1 rounded pointer-events-none ${isCountOver ? "bg-red-500 text-white" : "bg-white/80 text-blue-800 border"}`}>{toCircleNum(order)} {isCountOver && "⚠"}</div>}
+                               </div>
+                               <button 
+                                 onClick={() => toggleLock(date, period, cls)} 
+                                 className="text-sm ml-1 focus:outline-none hover:scale-110 transition-transform"
+                                 title={isLocked ? "ロック中 (解除するにはクリック)" : "クリックでロック"}
+                               >
+                                 {isLocked ? "🔒" : "🔓"}
+                               </button>
+                            </div>
+                            <select 
+                              className={`w-full p-1 rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${(!currentSubject || isLocked) ? "opacity-50 pointer-events-none" : ""}`}
+                              onChange={(e) => handleAssign(date, period, cls, 'teacher', e.target.value)}
+                              value={currentTeacher}
+                              disabled={!currentSubject || isLocked}
+                            >
+                              <option value="">{currentSubject ? "- 講師 -" : "(科目未定)"}</option>
+                              {filteredTeachers.map(t => {
+                                const isNgSlot = t.ngSlots?.includes(`${date}-${period}`);
+                                const isNgClass = t.ngClasses?.includes(cls);
+                                const isDisabled = isNgSlot || isNgClass;
+                                const label = t.name + (isNgSlot ? "(NG時)" : "") + (isNgClass ? "(クラス外)" : "");
+                                return <option key={t.name} value={t.name} disabled={isDisabled} className={isDisabled ? "text-gray-300 bg-gray-100" : ""}>{label}</option>;
+                              })}
+                            </select>
+                            {isTeacherConflict && <div className="text-xs text-red-600 font-bold text-center bg-red-100 rounded">⚠️ 重複</div>}
                           </div>
-                          <select 
-                            className={`w-full p-1 rounded font-bold cursor-pointer ${isTeacherConflict ? "text-red-600 bg-red-100" : "text-blue-900 bg-white/50"} ${(!currentSubject || isLocked) ? "opacity-50 pointer-events-none" : ""}`}
-                            onChange={(e) => handleAssign(date, period, cls, 'teacher', e.target.value)}
-                            value={currentTeacher}
-                            disabled={!currentSubject || isLocked}
-                          >
-                            <option value="">{currentSubject ? "- 講師 -" : "(科目未定)"}</option>
-                            {filteredTeachers.map(t => {
-                              const isNgSlot = t.ngSlots?.includes(`${date}-${period}`);
-                              const isNgClass = t.ngClasses?.includes(cls);
-                              const isDisabled = isNgSlot || isNgClass;
-                              const label = t.name + (isNgSlot ? "(NG時)" : "") + (isNgClass ? "(クラス外)" : "");
-                              return <option key={t.name} value={t.name} disabled={isDisabled} className={isDisabled ? "text-gray-300 bg-gray-100" : ""}>{label}</option>;
-                            })}
-                          </select>
-                          {isTeacherConflict && <div className="text-xs text-red-600 font-bold text-center bg-red-100 rounded">⚠️ 重複</div>}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
             ))}
           </tbody>
         </table>
