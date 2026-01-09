@@ -23,7 +23,6 @@ const DEFAULT_INITIAL_TEACHERS = [
   { name: "未定", subjects: ["英語", "数学", "国語", "理科", "社会"], ngSlots: [], ngClasses: [], priorityClasses: [] }
 ];
 
-// 基本設定
 const DEFAULT_TAB_CONFIG_BASE = {
   dates: ["12/25(木)", "12/26(金)", "12/27(土)", "1/4(日)", "1/6(火)", "1/7(水)"],
   periods: ["1限 (13:00~)", "2限 (14:10~)", "3限 (15:20~)"],
@@ -44,7 +43,7 @@ const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
-const STORAGE_KEY_PROJECT = 'winter_schedule_project_v44'; // Key updated for v44
+const STORAGE_KEY_PROJECT = 'winter_schedule_project_v45'; // Key updated for v45
 const STORAGE_KEY_USER_DEFAULTS = 'winter_schedule_user_defaults';
 
 export default function ScheduleApp() {
@@ -387,9 +386,8 @@ export default function ScheduleApp() {
   const handleResetAll = () => { if(window.confirm("全データ削除しますか？")) { localStorage.removeItem(STORAGE_KEY_PROJECT); window.location.reload(); }};
   const applyPattern = (pat) => { const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: pat } : t); pushHistory({ ...project, tabs: newTabs }); setGeneratedPatterns([]); };
   const handleLoadJson = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{try{const data=JSON.parse(ev.target.result); pushHistory(cleanSchedule(data)); alert("読込完了");}catch{alert("エラー");}}; r.readAsText(f); e.target.value=''; };
-  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v44.json`; a.click(); };
+  const handleSaveJson = () => { const cleaned = cleanSchedule(project); const b=new Blob([JSON.stringify(cleaned,null,2)],{type:"application/json"}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=`schedule_project_v45.json`; a.click(); };
 
-  // --- v44: MRV（Minimum Remaining Values）による賢い並び替え ---
   const generateSchedule = () => {
     setIsGenerating(true);
     setTimeout(() => {
@@ -434,7 +432,6 @@ export default function ScheduleApp() {
         }
       });
 
-      // 1. 全てのスロットを収集
       currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => currentConfig.classes.forEach(c => {
         const k=`${d}-${p}-${c}`;
         const entry = currentSchedule[k];
@@ -443,16 +440,11 @@ export default function ScheduleApp() {
         }
       })));
       
-      // ★ v44改良: MRVヒューリスティックによる並び替え
-      // 各スロットについて「配置可能な候補者数」を計算し、少ない順（難しい順）に並べる
       slots.forEach(slot => {
         let validCandidates = 0;
         const subjectsToCheck = slot.fixedSubject ? [slot.fixedSubject] : commonSubjects;
-        
-        // 簡易チェック: このスロットに入りうる先生の数をカウント（科目は未定なら全科目分）
         subjectsToCheck.forEach(subj => {
           project.teachers.forEach(t => {
-             // 基本的な適合性チェック（Subject, NG日, NGクラス）
              if (t.subjects.includes(subj) && 
                  !t.ngSlots?.includes(`${slot.d}-${slot.p}`) && 
                  !t.ngClasses?.includes(slot.c)) {
@@ -463,7 +455,6 @@ export default function ScheduleApp() {
         slot.score = validCandidates;
       });
 
-      // スコアが小さい（候補が少ない＝難しい）順にソート。同じならランダム。
       slots.sort((a, b) => {
         if (a.score === b.score) return Math.random() - 0.5;
         return a.score - b.score;
@@ -606,7 +597,7 @@ export default function ScheduleApp() {
       <style>{printStyle}</style>
 
       <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
-        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v44</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
+        <div className="flex items-center gap-2"><h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v45</h1><span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span></div>
         <div className="flex gap-2">
           <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold">💾 プロジェクト保存</button>
           <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
@@ -800,11 +791,12 @@ export default function ScheduleApp() {
                             draggable={!isLocked && !!entry.subject} onDragStart={(e) => handleDragStart(e, key, entry)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, key, entry)} onContextMenu={(e) => handleContextMenu(e, d, p, c)}
                           >
                             <div className={`flex flex-col rounded h-full ${cellColor} ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={stripeStyle}>
-                              <div className="flex justify-between items-start">
-                                <div className="relative flex-1">
+                              {/* v45修正: Flexboxで科目・回数・ロックボタンを横並びに整列 */}
+                              <div className="flex justify-between items-center gap-1">
+                                <div className="flex-1 min-w-0 flex items-center gap-1">
                                   <select 
                                     id={`select-${dIdx}-${pIdx}-${cIdx}-subject`}
-                                    className={`w-full bg-transparent font-bold focus:outline-none cursor-pointer text-gray-800 ${isSubjDup ? "text-red-600 underline" : ""} ${isCompact ? "text-[10px]" : "text-sm"} ${isLocked ? "pointer-events-none" : ""}`}
+                                    className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-gray-800 min-w-0 ${isSubjDup ? "text-red-600 underline" : ""} ${isCompact ? "text-xs" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
                                     value={entry.subject || ""}
                                     onChange={(e) => handleAssign(d, p, c, 'subject', e.target.value)}
                                     onKeyDown={(e) => handleCellNavigation(e, dIdx, pIdx, cIdx, 'subject')}
@@ -814,11 +806,12 @@ export default function ScheduleApp() {
                                       return <option key={s} value={s} disabled={isAlreadyUsed} className={isAlreadyUsed ? "bg-gray-200" : ""}>{s}</option>;
                                     })}
                                   </select>
-                                  {isSubjDup && <span className="absolute left-0 -top-4 bg-red-600 text-white text-[9px] px-1 rounded z-50">⚠️1日2回</span>}
-                                  {isConflict && <span className="absolute left-0 -bottom-4 bg-red-600 text-white text-[9px] px-1 rounded z-50 animate-pulse">⚠️重複</span>}
-                                  {entry.subject && !isSubjDup && <span className={`absolute right-0 top-0 text-[9px] px-1 rounded-full ${isOver ? "bg-red-500 text-white" : "bg-white/60 text-gray-600 border"}`}>{toCircleNum(order)}{isOver&&"!"}</span>}
+                                  {isSubjDup && <span className="text-[10px] bg-red-600 text-white px-1 rounded shrink-0">⚠️2回</span>}
+                                  {isConflict && <span className="text-[10px] bg-red-600 text-white px-1 rounded animate-pulse shrink-0">⚠️重複</span>}
+                                  {/* v45修正: 回数表示をここ（セレクトの横）に移動 */}
+                                  {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isOver ? "text-red-600" : "text-gray-700"}`}>{toCircleNum(order)}{isOver&&"!"}</span>}
                                 </div>
-                                <button onClick={() => toggleLock(d, p, c)} className={`ml-1 focus:outline-none text-gray-400 hover:text-gray-800 ${isCompact ? "text-[8px]" : "text-xs"}`}>{isLocked ? "🔒" : "🔓"}</button>
+                                <button onClick={() => toggleLock(d, p, c)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 ${isCompact ? "text-[10px]" : "text-sm"}`}>{isLocked ? "🔒" : "🔓"}</button>
                               </div>
                               <select 
                                 id={`select-${dIdx}-${pIdx}-${cIdx}-teacher`}
