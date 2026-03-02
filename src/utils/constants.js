@@ -29,8 +29,13 @@ export const DEFAULT_TAB_CONFIG_BASE = {
 };
 
 // --- localStorage キー ---
-export const STORAGE_KEY_PROJECT = 'winter_schedule_project_v45';
-export const STORAGE_KEY_USER_DEFAULTS = 'winter_schedule_user_defaults';
+export const STORAGE_KEY_PROJECT = 'schedule_project';
+export const STORAGE_KEY_USER_DEFAULTS = 'schedule_user_defaults';
+
+// 旧キー（互換性のため読み込み時に参照）
+export const LEGACY_STORAGE_KEYS = [
+  'winter_schedule_project_v45',
+];
 
 // --- 科目カラー ---
 export const getSubjectColor = (subject) => {

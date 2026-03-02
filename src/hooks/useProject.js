@@ -4,6 +4,7 @@ import {
   DEFAULT_TAB_CONFIG_BASE,
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
+  LEGACY_STORAGE_KEYS,
   CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
@@ -23,15 +24,33 @@ function createNewProject(tabs, teachers) {
 
 function loadInitialProject() {
   try {
-    const savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
+    // 新キーから読み込み
+    let savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
+
+    // 旧キーからのマイグレーション
+    if (!savedProject) {
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        savedProject = localStorage.getItem(legacyKey);
+        if (savedProject) {
+          // 新キーに移行して旧キーを削除
+          localStorage.setItem(STORAGE_KEY_PROJECT, savedProject);
+          localStorage.removeItem(legacyKey);
+          break;
+        }
+      }
+    }
+
     if (savedProject) {
       const parsed = JSON.parse(savedProject);
       return migrateProject(parsed);
     }
 
     const savedDefaults = localStorage.getItem(STORAGE_KEY_USER_DEFAULTS);
-    if (savedDefaults) {
-      const defaults = JSON.parse(savedDefaults);
+    // 旧キーのデフォルト設定も参照
+    const legacyDefaults = !savedDefaults ? localStorage.getItem('winter_schedule_user_defaults') : null;
+    const defaultsStr = savedDefaults || legacyDefaults;
+    if (defaultsStr) {
+      const defaults = JSON.parse(defaultsStr);
       return createNewProject(
         [{ id: 1, name: "メイン", config: defaults.config || DEFAULT_TAB_CONFIG_BASE, schedule: {} }],
         defaults.teachers || DEFAULT_INITIAL_TEACHERS,
@@ -334,6 +353,7 @@ export function useProject() {
 
   const handleResetAll = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY_PROJECT);
+    LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
     window.location.reload();
   }, []);
 
@@ -364,7 +384,9 @@ export function useProject() {
     const u = URL.createObjectURL(b);
     const a = document.createElement('a');
     a.href = u;
-    a.download = `schedule_project_v${CURRENT_PROJECT_VERSION}.json`;
+    const datePart = new Date().toISOString().slice(0, 10);
+    const namePart = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
+    a.download = `${namePart}_${datePart}.json`;
     a.click();
   }, [project]);
 

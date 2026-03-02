@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { downloadScheduleExcel, downloadTeacherExcel } from '../utils/excelExport';
 
@@ -9,12 +9,42 @@ export default function Header() {
     fileInputRef,
     handleSaveJson,
     handleLoadJson,
+    updateProjectName,
   } = useProjectContext();
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(project.name || "");
+
+  const handleNameSubmit = () => {
+    updateProjectName(nameInput.trim());
+    setIsEditingName(false);
+  };
+
+  const displayName = project.name || "無題のプロジェクト";
 
   return (
     <div className="flex justify-between items-center mb-2 no-print bg-white p-3 rounded shadow-sm border-b border-gray-200">
       <div className="flex items-center gap-2">
-        <h1 className="text-xl font-bold text-gray-700">📅 時間割作成くん v45</h1>
+        <span className="text-xl">📅</span>
+        {isEditingName ? (
+          <input
+            autoFocus
+            className="text-xl font-bold text-gray-700 border-b-2 border-blue-500 outline-none bg-transparent px-1"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onBlur={handleNameSubmit}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleNameSubmit(); if (e.key === 'Escape') { setNameInput(project.name || ""); setIsEditingName(false); } }}
+            placeholder="プロジェクト名を入力"
+          />
+        ) : (
+          <h1
+            className="text-xl font-bold text-gray-700 cursor-pointer hover:text-blue-600 hover:underline"
+            onClick={() => { setNameInput(project.name || ""); setIsEditingName(true); }}
+            title="クリックで名前を変更"
+          >
+            {displayName}
+          </h1>
+        )}
         <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span>
       </div>
       <div className="flex gap-2">
