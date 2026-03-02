@@ -52,15 +52,32 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
       {generatedPatterns.length > 0 && (
         <div className="mb-4 p-4 bg-purple-50 border-2 border-purple-200 rounded no-print">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="font-bold text-purple-900">✨ 自動生成の結果 (3案)</h3>
+            <h3 className="font-bold text-purple-900">✨ 自動生成の結果 ({generatedPatterns.length}案)</h3>
             <button onClick={() => setGeneratedPatterns([])} className="text-sm text-gray-500 underline">キャンセル</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {generatedPatterns.some(p => p.isPartial) && (
+            <div className="mb-3 p-2 bg-yellow-50 border border-yellow-300 rounded text-sm text-yellow-800">
+              ⚠️ 完全解が見つからなかった案があります。部分解として可能な範囲で埋めた結果を表示しています。
+            </div>
+          )}
+          <div className={`grid grid-cols-1 gap-4 ${generatedPatterns.length >= 3 ? 'md:grid-cols-3' : generatedPatterns.length === 2 ? 'md:grid-cols-2' : ''}`}>
             {generatedPatterns.map((pat, i) => (
-              <div key={i} className="bg-white p-3 rounded border shadow-sm hover:shadow-md transition-shadow">
-                <div className="font-bold text-center mb-2 text-gray-700">案 {i + 1}</div>
-                <SummaryTable target={pat} teachers={project.teachers} />
-                <button onClick={() => { applyPattern(pat); setGeneratedPatterns([]); }} className="w-full mt-2 py-1 bg-purple-600 text-white rounded text-sm font-bold hover:bg-purple-700">
+              <div key={i} className={`bg-white p-3 rounded border shadow-sm hover:shadow-md transition-shadow ${pat.isPartial ? 'border-yellow-300' : ''}`}>
+                <div className="font-bold text-center mb-2 text-gray-700">
+                  案 {i + 1}
+                  {pat.isPartial && (
+                    <span className="ml-2 text-xs font-normal text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded">
+                      部分解 ({pat.filledCount}/{pat.totalSlots}コマ充填)
+                    </span>
+                  )}
+                  {!pat.isPartial && (
+                    <span className="ml-2 text-xs font-normal text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                      完全解
+                    </span>
+                  )}
+                </div>
+                <SummaryTable target={pat.schedule} teachers={project.teachers} />
+                <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
                   この案を採用
                 </button>
               </div>
