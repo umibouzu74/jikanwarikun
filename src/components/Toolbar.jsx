@@ -10,6 +10,7 @@ export default function Toolbar({
   setShowSummary,
   setShowConfig,
   isGenerating,
+  generateProgress,
   onGenerate,
 }) {
   const {
@@ -66,7 +67,12 @@ export default function Toolbar({
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
         <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 shadow-sm text-sm font-bold">🗑️ 生成クリア</button>
         <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-purple-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"}`}>
-          {isGenerating ? "🔮 生成中..." : "🧙‍♂️ 自動作成"}
+          {isGenerating ? (
+            <>
+              <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              生成中 ({generateProgress?.current || 0}/{generateProgress?.total || 3})
+            </>
+          ) : "🧙‍♂️ 自動作成"}
         </button>
       </div>
     </div>

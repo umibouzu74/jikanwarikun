@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ProjectProvider } from './contexts/ProjectContext';
 import { UIProvider } from './contexts/UIContext';
 import { useUI } from './contexts/uiContextValue';
 import { useProjectContext } from './contexts/projectContextValue';
-import { generateSchedule } from './logic/autoGenerator';
+import { generateSinglePattern } from './logic/autoGenerator';
 import Header from './components/Header';
 import TabBar from './components/TabBar';
 import Toolbar from './components/Toolbar';
@@ -11,6 +11,8 @@ import ScheduleTable from './components/ScheduleTable';
 import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
+
+const NUM_PATTERNS = 3;
 
 function ScheduleApp() {
   const { project } = useProjectContext();
@@ -24,25 +26,63 @@ function ScheduleApp() {
   const [showSummary, setShowSummary] = useState(false);
   const [generatedPatterns, setGeneratedPatterns] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState({ current: 0, total: NUM_PATTERNS });
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [isCompact, setIsCompact] = useState(false);
+  const generatingRef = useRef(false);
 
-  const handleGenerate = () => {
+  const handleGenerate = useCallback(() => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const solutions = generateSchedule({
-        project,
-        activeTabId: project.activeTabId,
-      });
-      if (solutions.length > 0) {
-        setGeneratedPatterns(solutions);
-      } else {
-        showToast("完全なパターンが見つかりませんでした。条件を緩和して、可能な範囲で埋めた案を提示します。", "warning", 5000);
+    setGeneratedPatterns([]);
+    setGenerateProgress({ current: 0, total: NUM_PATTERNS });
+    generatingRef.current = true;
+
+    const results = [];
+    const baseSeed = Date.now();
+
+    const generateNext = (index) => {
+      if (!generatingRef.current || index >= NUM_PATTERNS) {
+        // 全パターン生成完了
+        const patterns = results.map(r => ({
+          schedule: r.solution || r.bestPartial,
+          isPartial: r.solution === null,
+          filledCount: r.solution ? r.totalSlots : r.filledCount,
+          totalSlots: r.totalSlots,
+        })).filter(r => r.schedule !== null);
+
+        if (patterns.length > 0) {
+          setGeneratedPatterns(patterns);
+          const hasPartial = patterns.some(p => p.isPartial);
+          if (hasPartial) {
+            showToast("一部の案は完全解が見つからなかったため、可能な範囲で埋めた部分解です。", "warning", 5000);
+          }
+        } else {
+          showToast("パターンを生成できませんでした。条件を見直してください。", "error", 5000);
+        }
+        setIsGenerating(false);
+        generatingRef.current = false;
+        return;
       }
-      setIsGenerating(false);
-    }, 100);
-  };
+
+      setGenerateProgress({ current: index, total: NUM_PATTERNS });
+
+      setTimeout(() => {
+        const seed = baseSeed + index * 7919;
+        const result = generateSinglePattern({
+          project,
+          activeTabId: project.activeTabId,
+          seed,
+        });
+        results.push(result);
+        setGenerateProgress({ current: index + 1, total: NUM_PATTERNS });
+        generateNext(index + 1);
+      }, 50);
+    };
+
+    // 少し遅延を入れてUIを更新してから開始
+    setTimeout(() => generateNext(0), 50);
+  }, [project, showToast]);
 
   const handleContextMenu = (e, dIdx, pIdx, cIdx, type = null, val = null) => {
     e.preventDefault();
@@ -73,6 +113,7 @@ function ScheduleApp() {
           setShowSummary={setShowSummary}
           setShowConfig={setShowConfig}
           isGenerating={isGenerating}
+          generateProgress={generateProgress}
           onGenerate={handleGenerate}
         />
 
