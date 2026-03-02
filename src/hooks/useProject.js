@@ -12,6 +12,39 @@ import {
 } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, migrateProject } from '../utils/scheduleKey';
 
+// 講師マスタの差分を検出する
+function detectTeacherDiffs(currentTeachers, loadedTeachers) {
+  const diffs = [];
+  const currentNames = new Set(currentTeachers.map(t => t.name));
+  const loadedNames = new Set(loadedTeachers.map(t => t.name));
+
+  // 読み込みデータにのみ存在する講師
+  const added = loadedTeachers.filter(t => !currentNames.has(t.name));
+  if (added.length > 0) {
+    diffs.push(`【追加】${added.map(t => t.name).join('、')}`);
+  }
+
+  // 現在のデータにのみ存在する講師
+  const removed = currentTeachers.filter(t => !loadedNames.has(t.name));
+  if (removed.length > 0) {
+    diffs.push(`【削除】${removed.map(t => t.name).join('、')}`);
+  }
+
+  // 担当科目が異なる講師
+  loadedTeachers.forEach(lt => {
+    const ct = currentTeachers.find(t => t.name === lt.name);
+    if (ct) {
+      const currentSubjects = [...ct.subjects].sort().join(',');
+      const loadedSubjects = [...(lt.subjects || [])].sort().join(',');
+      if (currentSubjects !== loadedSubjects) {
+        diffs.push(`【科目変更】${lt.name}: ${ct.subjects.join('/')} → ${lt.subjects.join('/')}`);
+      }
+    }
+  });
+
+  return diffs;
+}
+
 function createNewProject(tabs, teachers, subjectColors, subjects) {
   return {
     version: CURRENT_PROJECT_VERSION,
@@ -440,14 +473,26 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, pushHistory]);
 
-  const handleLoadJson = useCallback((e, onNotify) => {
+  const handleLoadJson = useCallback((e, onNotify, onConfirm) => {
     const f = e.target.files[0];
     if (!f) return;
     const r = new FileReader();
-    r.onload = (ev) => {
+    r.onload = async (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
         const migrated = migrateProject(data);
+
+        // 講師マスタの差分検出
+        const diffs = detectTeacherDiffs(project.teachers, migrated.teachers || []);
+        if (diffs.length > 0 && onConfirm) {
+          const diffText = diffs.join("\n");
+          const confirmed = await onConfirm(
+            `読み込むデータの講師マスタに現在のプロジェクトとの差分があります:\n\n${diffText}\n\nこのまま読み込みますか？`,
+            { title: "講師マスタの差分検出", confirmLabel: "読み込む" }
+          );
+          if (!confirmed) return;
+        }
+
         pushHistory(cleanSchedule(migrated));
         if (onNotify) onNotify("読込完了", "success");
       } catch {
@@ -456,7 +501,7 @@ export function useProject() {
     };
     r.readAsText(f);
     e.target.value = '';
-  }, [pushHistory]);
+  }, [project.teachers, pushHistory]);
 
   const handleSaveJson = useCallback(() => {
     const cleaned = cleanSchedule(project);
@@ -468,6 +513,7 @@ export function useProject() {
     const namePart = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
     a.download = `${namePart}_${datePart}.json`;
     a.click();
+    URL.revokeObjectURL(u);
   }, [project]);
 
   const updateProjectName = useCallback((name) => {
