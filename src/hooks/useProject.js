@@ -476,11 +476,28 @@ export function useProject() {
     const curr = currentSchedule[k] || {};
     if (!curr.locked) {
       const ns = { ...currentSchedule };
+      // 合同グループの連動クリア
+      if (curr.subject) {
+        const date = currentConfig.dates[dIdx];
+        const className = currentConfig.classes[cIdx];
+        const group = findCombinedGroup(project.combinedGroups, curr.subject, className, date);
+        if (group) {
+          group.classes.forEach(gc => {
+            const gci = currentConfig.classes.indexOf(gc);
+            if (gci >= 0 && gci !== cIdx) {
+              const gk = makeKey(dIdx, pIdx, gci);
+              if (ns[gk]?.subject === curr.subject && !ns[gk]?.locked) {
+                delete ns[gk];
+              }
+            }
+          });
+        }
+      }
       delete ns[k];
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       pushHistory({ ...project, tabs: newTabs });
     }
-  }, [project, currentSchedule, pushHistory]);
+  }, [project, currentSchedule, currentConfig, pushHistory]);
 
   const handleSetNg = useCallback((dIdx, pIdx, cIdx) => {
     const k = makeKey(dIdx, pIdx, cIdx);

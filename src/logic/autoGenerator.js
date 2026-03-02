@@ -37,28 +37,6 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
   const combinedGroups = project.combinedGroups || [];
 
-  const baseDailyCounts = {};
-  project.teachers.forEach(t => {
-    currentConfig.dates.forEach(d => {
-      const key = makeExternalKey(d, t.name);
-      baseDailyCounts[key] = project.externalCounts?.[key] || 0;
-    });
-  });
-
-  const currentTabFixedCounts = {};
-  currentConfig.dates.forEach((d, dIdx) => {
-    currentConfig.periods.forEach((p, pIdx) => {
-      currentConfig.classes.forEach((c, cIdx) => {
-        const k = makeKey(dIdx, pIdx, cIdx);
-        const entry = currentSchedule[k];
-        if (entry && entry.teacher && entry.teacher !== "未定") {
-          const dayKey = makeExternalKey(d, entry.teacher);
-          currentTabFixedCounts[dayKey] = (currentTabFixedCounts[dayKey] || 0) + 1;
-        }
-      });
-    });
-  });
-
   let solution = null;
   const slots = [];
   const currentCounts = {};
@@ -180,9 +158,16 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
             break;
           }
 
-          // 未充填のセカンダリスロットを収集
+          // 未充填のセカンダリスロットを収集（元の状態を保存）
           if (!otherEntry?.subject || !otherEntry?.teacher) {
-            secondarySlots.push({ cIdx: otherCIdx, key: otherKey, className: otherClass });
+            const hadSubject = !!otherEntry?.subject;
+            secondarySlots.push({
+              cIdx: otherCIdx,
+              key: otherKey,
+              className: otherClass,
+              hadSubject,
+              original: otherEntry ? { ...otherEntry } : null,
+            });
           }
         }
 
@@ -237,10 +222,13 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
         tempDaily[dayKey]++; // 合同でも1コマとしてカウント
 
-        // セカンダリスロットを割り当て
+        // セカンダリスロットを割り当て（locked 保持、既存科目は二重カウントしない）
         secondarySlots.forEach(ss => {
-          tempSch[ss.key] = { subject: s, teacher: tName };
-          if (tempCnt[ss.cIdx]) tempCnt[ss.cIdx][s] = (tempCnt[ss.cIdx][s] || 0) + 1;
+          const locked = tempSch[ss.key]?.locked;
+          tempSch[ss.key] = { subject: s, teacher: tName, ...(locked ? { locked: true } : {}) };
+          if (!ss.hadSubject && tempCnt[ss.cIdx]) {
+            tempCnt[ss.cIdx][s] = (tempCnt[ss.cIdx][s] || 0) + 1;
+          }
         });
 
         solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
@@ -251,10 +239,16 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         else { delete tempSch[k]; tempCnt[cIdx][s]--; }
         tempDaily[dayKey]--;
 
-        // バックトラック: セカンダリスロット
+        // バックトラック: セカンダリスロット（元の状態に復元）
         secondarySlots.forEach(ss => {
-          delete tempSch[ss.key];
-          if (tempCnt[ss.cIdx]) tempCnt[ss.cIdx][s]--;
+          if (ss.original) {
+            tempSch[ss.key] = { ...ss.original };
+          } else {
+            delete tempSch[ss.key];
+          }
+          if (!ss.hadSubject && tempCnt[ss.cIdx]) {
+            tempCnt[ss.cIdx][s]--;
+          }
         });
       }
     }
