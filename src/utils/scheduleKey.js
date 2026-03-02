@@ -114,5 +114,12 @@ export function migrateProject(project) {
     result = { ...result, subjectColors: {} };
   }
 
+  // subjects が未設定の場合は subjectCounts のキーから生成
+  if (!result.subjects) {
+    const firstTab = result.tabs[0];
+    const subjects = firstTab ? Object.keys(firstTab.config.subjectCounts) : [];
+    result = { ...result, subjects };
+  }
+
   return result;
 }

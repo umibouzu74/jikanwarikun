@@ -7,6 +7,7 @@ import ClassPriority from './ClassPriority';
 import ExternalCounts from './ExternalCounts';
 import NgSettings from './NgSettings';
 import SubjectColorSettings from './SubjectColorSettings';
+import SubjectManager from './SubjectManager';
 
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
@@ -27,13 +28,16 @@ export default function ConfigModal({ onClose }) {
         </div>
         <div className="flex gap-4 px-6 pt-4 border-b">
           <button onClick={() => setConfigTab('basic')} className={`pb-2 font-bold ${configTab === 'basic' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>基本設定</button>
+          <button onClick={() => setConfigTab('subjects')} className={`pb-2 font-bold ${configTab === 'subjects' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>📚 科目</button>
           <button onClick={() => setConfigTab('classes')} className={`pb-2 font-bold ${configTab === 'classes' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🏫 クラス優先度</button>
           <button onClick={() => setConfigTab('external')} className={`pb-2 font-bold ${configTab === 'external' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>📅 他学年・午前</button>
           <button onClick={() => setConfigTab('ng')} className={`pb-2 font-bold ${configTab === 'ng' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🚫 日時NG</button>
           <button onClick={() => setConfigTab('colors')} className={`pb-2 font-bold ${configTab === 'colors' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🎨 科目カラー</button>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
-          {configTab === 'colors' ? (
+          {configTab === 'subjects' ? (
+            <SubjectManager />
+          ) : configTab === 'colors' ? (
             <SubjectColorSettings />
           ) : configTab === 'external' ? (
             <ExternalCounts />

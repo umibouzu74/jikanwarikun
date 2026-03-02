@@ -20,6 +20,9 @@ export const DEFAULT_INITIAL_TEACHERS = [
   { name: "未定", subjects: ["英語", "数学", "国語", "理科", "社会"], ngSlots: [], ngClasses: [], priorityClasses: [] }
 ];
 
+// --- デフォルト科目マスタ ---
+export const DEFAULT_SUBJECTS = ["英語", "数学", "国語", "理科", "社会"];
+
 // --- デフォルトタブ設定 ---
 export const DEFAULT_TAB_CONFIG_BASE = {
   dates: ["12/25(木)", "12/26(金)", "12/27(土)", "1/4(日)", "1/6(火)", "1/7(水)"],
