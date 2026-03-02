@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { useUI } from '../contexts/uiContextValue';
 import { downloadScheduleExcel, downloadTeacherExcel } from '../utils/excelExport';
 
 export default function Header() {
@@ -11,6 +12,7 @@ export default function Header() {
     handleLoadJson,
     updateProjectName,
   } = useProjectContext();
+  const { showToast } = useUI();
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(project.name || "");
@@ -52,7 +54,7 @@ export default function Header() {
         <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
         <button onClick={() => downloadScheduleExcel(project)} className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold">📊 全Excel</button>
         <button onClick={() => downloadTeacherExcel(project)} className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold">👤 個人Excel</button>
-        <input type="file" accept=".json" ref={fileInputRef} onChange={handleLoadJson} className="hidden" />
+        <input type="file" accept=".json" ref={fileInputRef} onChange={(e) => handleLoadJson(e, showToast)} className="hidden" />
       </div>
     </div>
   );

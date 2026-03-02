@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   DEFAULT_INITIAL_TEACHERS,
   DEFAULT_TAB_CONFIG_BASE,
+  DEFAULT_SUBJECTS,
+  DEFAULT_SUBJECT_COLORS,
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
   LEGACY_STORAGE_KEYS,
@@ -10,7 +12,7 @@ import {
 } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, migrateProject } from '../utils/scheduleKey';
 
-function createNewProject(tabs, teachers) {
+function createNewProject(tabs, teachers, subjectColors, subjects) {
   return {
     version: CURRENT_PROJECT_VERSION,
     name: "",
@@ -19,6 +21,8 @@ function createNewProject(tabs, teachers) {
     teachers: teachers || DEFAULT_INITIAL_TEACHERS,
     activeTabId: tabs[0]?.id || 1,
     tabs,
+    subjects: subjects || [...DEFAULT_SUBJECTS],
+    subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
   };
 }
 
@@ -127,7 +131,7 @@ export function useProject() {
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
   const currentConfig = activeTab.config;
-  const commonSubjects = Object.keys(currentConfig.subjectCounts);
+  const commonSubjects = project.subjects || Object.keys(currentConfig.subjectCounts);
 
   // --- タブ管理 ---
   const handleAddTab = useCallback((name) => {
@@ -165,6 +169,55 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, currentConfig, pushHistory]);
 
+  // --- 科目マスタ管理 ---
+  const addSubject = useCallback((name) => {
+    if (!name) return;
+    const subjects = project.subjects || [];
+    if (subjects.includes(name)) return;
+    const newSubjects = [...subjects, name];
+    // 全タブの subjectCounts にも追加（初期値 0）
+    const newTabs = project.tabs.map(tab => ({
+      ...tab,
+      config: {
+        ...tab.config,
+        subjectCounts: { ...tab.config.subjectCounts, [name]: tab.config.subjectCounts[name] || 0 },
+      },
+    }));
+    pushHistory({ ...project, subjects: newSubjects, tabs: newTabs });
+  }, [project, pushHistory]);
+
+  const removeSubject = useCallback((name) => {
+    const newSubjects = (project.subjects || []).filter(s => s !== name);
+    // 全タブの subjectCounts からも削除
+    const newTabs = project.tabs.map(tab => {
+      const newCounts = { ...tab.config.subjectCounts };
+      delete newCounts[name];
+      // スケジュールからも該当科目をクリア
+      const newSch = {};
+      Object.keys(tab.schedule).forEach(k => {
+        const e = tab.schedule[k];
+        newSch[k] = e.subject === name ? { ...e, subject: "", teacher: "" } : e;
+      });
+      return { ...tab, config: { ...tab.config, subjectCounts: newCounts }, schedule: newSch };
+    });
+    // 講師の担当科目からも削除
+    const newTeachers = project.teachers.map(t => ({
+      ...t,
+      subjects: t.subjects.filter(s => s !== name),
+    }));
+    // カラー設定からも削除
+    const newColors = { ...(project.subjectColors || {}) };
+    delete newColors[name];
+    pushHistory({ ...project, subjects: newSubjects, tabs: newTabs, teachers: newTeachers, subjectColors: newColors });
+  }, [project, pushHistory]);
+
+  const reorderSubjects = useCallback((fromIdx, toIdx) => {
+    const subjects = [...(project.subjects || [])];
+    const [moved] = subjects.splice(fromIdx, 1);
+    subjects.splice(toIdx, 0, moved);
+    pushHistory({ ...project, subjects });
+  }, [project, pushHistory]);
+
   // --- 講師管理 ---
   const addTeacher = useCallback((name) => {
     if (name) pushHistory({ ...project, teachers: [...project.teachers, { name, subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] }] });
@@ -179,6 +232,31 @@ export function useProject() {
       return { ...tab, schedule: newSch };
     });
     pushHistory({ ...project, teachers: newTeachers, tabs: newTabs });
+  }, [project, pushHistory]);
+
+  const renameTeacher = useCallback((idx, newName) => {
+    if (!newName) return;
+    const oldName = project.teachers[idx].name;
+    if (oldName === newName) return;
+    const newTeachers = project.teachers.map((t, i) => i === idx ? { ...t, name: newName } : t);
+    // 全タブのスケジュールデータの講師名を更新
+    const newTabs = project.tabs.map(tab => {
+      const newSch = {};
+      Object.keys(tab.schedule).forEach(k => {
+        const e = tab.schedule[k];
+        newSch[k] = e.teacher === oldName ? { ...e, teacher: newName } : e;
+      });
+      return { ...tab, schedule: newSch };
+    });
+    // 外部カウントのキーも更新
+    const newExternal = {};
+    if (project.externalCounts) {
+      Object.keys(project.externalCounts).forEach(k => {
+        const newKey = k.endsWith(`-${oldName}`) ? k.replace(`-${oldName}`, `-${newName}`) : k;
+        newExternal[newKey] = project.externalCounts[k];
+      });
+    }
+    pushHistory({ ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal });
   }, [project, pushHistory]);
 
   const toggleTeacherSubject = useCallback((idx, subj) => {
@@ -362,7 +440,7 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, pushHistory]);
 
-  const handleLoadJson = useCallback((e) => {
+  const handleLoadJson = useCallback((e, onNotify) => {
     const f = e.target.files[0];
     if (!f) return;
     const r = new FileReader();
@@ -371,8 +449,10 @@ export function useProject() {
         const data = JSON.parse(ev.target.result);
         const migrated = migrateProject(data);
         pushHistory(cleanSchedule(migrated));
-        alert("読込完了");
-      } catch { alert("エラー"); }
+        if (onNotify) onNotify("読込完了", "success");
+      } catch {
+        if (onNotify) onNotify("読み込みエラー", "error");
+      }
     };
     r.readAsText(f);
     e.target.value = '';
@@ -392,6 +472,11 @@ export function useProject() {
 
   const updateProjectName = useCallback((name) => {
     pushHistory({ ...project, name });
+  }, [project, pushHistory]);
+
+  const updateSubjectColor = useCallback((subject, color) => {
+    const newColors = { ...(project.subjectColors || {}), [subject]: color };
+    pushHistory({ ...project, subjectColors: newColors });
   }, [project, pushHistory]);
 
   return {
@@ -416,9 +501,14 @@ export function useProject() {
     // 設定
     handleListConfigChange,
     handleSubjectCountChange,
+    // 科目マスタ
+    addSubject,
+    removeSubject,
+    reorderSubjects,
     // 講師
     addTeacher,
     removeTeacher,
+    renameTeacher,
     toggleTeacherSubject,
     toggleTeacherNg,
     toggleTeacherClassPriority,
@@ -442,5 +532,7 @@ export function useProject() {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    // 科目カラー
+    updateSubjectColor,
   };
 }

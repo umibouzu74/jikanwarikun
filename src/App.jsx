@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProjectProvider } from './contexts/ProjectContext';
+import { UIProvider } from './contexts/UIContext';
+import { useUI } from './contexts/uiContextValue';
 import { useProjectContext } from './contexts/projectContextValue';
 import { generateSchedule } from './logic/autoGenerator';
 import Header from './components/Header';
@@ -12,6 +14,7 @@ import ConfigModal from './components/ConfigModal';
 
 function ScheduleApp() {
   const { project } = useProjectContext();
+  const { showToast } = useUI();
 
   useEffect(() => {
     document.title = project.name ? `${project.name} - 時間割作成くん` : "時間割作成くん";
@@ -35,7 +38,7 @@ function ScheduleApp() {
       if (solutions.length > 0) {
         setGeneratedPatterns(solutions);
       } else {
-        alert("完全なパターンが見つかりませんでした。\n条件を緩和して、可能な範囲で埋めた案を提示します。");
+        showToast("完全なパターンが見つかりませんでした。条件を緩和して、可能な範囲で埋めた案を提示します。", "warning", 5000);
       }
       setIsGenerating(false);
     }, 100);
@@ -95,8 +98,10 @@ function ScheduleApp() {
 
 export default function App() {
   return (
-    <ProjectProvider>
-      <ScheduleApp />
-    </ProjectProvider>
+    <UIProvider>
+      <ProjectProvider>
+        <ScheduleApp />
+      </ProjectProvider>
+    </UIProvider>
   );
 }

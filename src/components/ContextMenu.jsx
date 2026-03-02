@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
 
 export default function ContextMenu({ contextMenu, clipboard, onClose }) {
@@ -13,16 +14,17 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     handleSetNg,
     toggleLock,
   } = useProjectContext();
+  const { showInput } = useUI();
 
   if (!contextMenu) return null;
 
   const { dIdx, pIdx, cIdx, type, val } = contextMenu;
 
-  const handleAction = (action) => {
+  const handleAction = async (action) => {
     if (action === 'rename') {
-      const newVal = prompt(`「${val}」の新しい名称を入力:`, val);
-      handleRenameHeader(type, val, newVal);
       onClose();
+      const newVal = await showInput(`「${val}」の新しい名称を入力してください`, { title: "名称の変更", defaultValue: val });
+      if (newVal) handleRenameHeader(type, val, newVal);
       return;
     }
 
