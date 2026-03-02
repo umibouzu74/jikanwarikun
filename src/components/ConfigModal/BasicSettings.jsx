@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { useUI } from '../../contexts/uiContextValue';
 
 export default function BasicSettings() {
   const {
@@ -10,6 +11,15 @@ export default function BasicSettings() {
     handleSubjectCountChange,
     handleSaveAsDefault,
   } = useProjectContext();
+  const { showConfirm, showToast } = useUI();
+
+  const handleSaveDefaultClick = async () => {
+    const ok = await showConfirm("現在の「講師設定」と「カレンダー構成」を初期値として保存しますか？\n次回リセット時にこの設定が読み込まれます。", { title: "初期値の保存", confirmLabel: "保存" });
+    if (ok) {
+      handleSaveAsDefault();
+      showToast("保存しました。次回からこの設定が初期値になります。");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -42,7 +52,7 @@ export default function BasicSettings() {
         </div>
       </div>
       <div className="pt-2">
-        <button onClick={() => { if (window.confirm("現在の「講師設定」と「カレンダー構成」を初期値として保存しますか？\n次回リセット時にこの設定が読み込まれます。")) { handleSaveAsDefault(); alert("✅ 保存しました。\n次回からこの設定が初期値になります。"); } }} className="w-full py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-700 shadow-sm text-sm">
+        <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-gray-600 text-white font-bold rounded hover:bg-gray-700 shadow-sm text-sm">
           💾 現在の設定を初期値にする
         </button>
       </div>

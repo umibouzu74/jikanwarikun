@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { useUI } from '../../contexts/uiContextValue';
 import BasicSettings from './BasicSettings';
 import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
@@ -10,6 +11,12 @@ import SubjectColorSettings from './SubjectColorSettings';
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName } = useProjectContext();
+  const { showConfirm } = useUI();
+
+  const handleResetClick = async () => {
+    const ok = await showConfirm("全データを削除しますか？\nこの操作は元に戻せません。", { title: "データリセット", danger: true, confirmLabel: "全削除" });
+    if (ok) handleResetAll();
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print">
@@ -58,7 +65,7 @@ export default function ConfigModal({ onClose }) {
             </>
           )}
           <div className="mt-6 border-t pt-4 text-right">
-            <button onClick={() => { if (window.confirm("全データ削除しますか？")) handleResetAll(); }} className="text-xs text-red-500 hover:text-red-700 underline">⚠️ すべてのデータをリセット</button>
+            <button onClick={handleResetClick} className="text-xs text-red-500 hover:text-red-700 underline">⚠️ すべてのデータをリセット</button>
           </div>
         </div>
       </div>

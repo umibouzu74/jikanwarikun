@@ -364,7 +364,7 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, pushHistory]);
 
-  const handleLoadJson = useCallback((e) => {
+  const handleLoadJson = useCallback((e, onNotify) => {
     const f = e.target.files[0];
     if (!f) return;
     const r = new FileReader();
@@ -373,8 +373,10 @@ export function useProject() {
         const data = JSON.parse(ev.target.result);
         const migrated = migrateProject(data);
         pushHistory(cleanSchedule(migrated));
-        alert("読込完了");
-      } catch { alert("エラー"); }
+        if (onNotify) onNotify("読込完了", "success");
+      } catch {
+        if (onNotify) onNotify("読み込みエラー", "error");
+      }
     };
     r.readAsText(f);
     e.target.value = '';

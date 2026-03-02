@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { useUI } from '../contexts/uiContextValue';
 import { parseKey } from '../utils/scheduleKey';
 
 export default function Toolbar({
@@ -20,6 +21,12 @@ export default function Toolbar({
     redo,
     handleClearUnlocked,
   } = useProjectContext();
+  const { showConfirm } = useUI();
+
+  const handleClearClick = async () => {
+    const ok = await showConfirm("ロックされていないセルを全てクリアしますか？", { title: "生成クリア", danger: true, confirmLabel: "クリア" });
+    if (ok) handleClearUnlocked();
+  };
 
   const scrollToFirstError = () => {
     if (analysis.errorKeys.length === 0) return;
@@ -57,7 +64,7 @@ export default function Toolbar({
         <button onClick={() => setShowSummary(!showSummary)} className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm text-sm font-bold">📊 集計</button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 shadow-sm text-sm font-bold">⚙️ 設定</button>
         <div className="h-6 w-px bg-gray-300 mx-1"></div>
-        <button onClick={() => { if (window.confirm("ロックされていないセルを全てクリアしますか？")) handleClearUnlocked(); }} className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 shadow-sm text-sm font-bold">🗑️ 生成クリア</button>
+        <button onClick={handleClearClick} className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 border border-red-200 rounded hover:bg-red-200 shadow-sm text-sm font-bold">🗑️ 生成クリア</button>
         <button onClick={onGenerate} disabled={isGenerating} className={`flex items-center gap-1 px-4 py-2 text-white rounded shadow-sm text-sm font-bold transition-colors ${isGenerating ? "bg-purple-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"}`}>
           {isGenerating ? "🔮 生成中..." : "🧙‍♂️ 自動作成"}
         </button>

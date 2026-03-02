@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { useUI } from '../../contexts/uiContextValue';
 
 export default function TeacherManager() {
   const {
@@ -9,12 +10,23 @@ export default function TeacherManager() {
     removeTeacher,
     toggleTeacherSubject,
   } = useProjectContext();
+  const { showConfirm, showInput } = useUI();
+
+  const handleAddClick = async () => {
+    const name = await showInput("講師名を入力してください", { title: "講師の追加", placeholder: "例: 山田" });
+    if (name) addTeacher(name);
+  };
+
+  const handleRemoveClick = async (i) => {
+    const ok = await showConfirm(`「${project.teachers[i].name}」を削除しますか？`, { title: "講師の削除", danger: true, confirmLabel: "削除" });
+    if (ok) removeTeacher(i);
+  };
 
   return (
     <div className="border-l pl-6 space-y-4">
       <div className="flex justify-between items-center border-b pb-1">
         <h3 className="font-bold text-green-800">👤 講師マスタ (全タブ共通)</h3>
-        <button onClick={() => { const n = prompt("講師名:"); if (n) addTeacher(n); }} className="text-xs bg-green-600 text-white px-2 py-1 rounded shadow">+ 追加</button>
+        <button onClick={handleAddClick} className="text-xs bg-green-600 text-white px-2 py-1 rounded shadow">+ 追加</button>
       </div>
       <div className="overflow-y-auto max-h-[400px] border rounded bg-gray-50 p-2">
         <table className="w-full text-sm">
@@ -38,7 +50,7 @@ export default function TeacherManager() {
                   ))}
                 </td>
                 <td className="p-2 text-center">
-                  <button onClick={() => { if (window.confirm("この講師を削除しますか？")) removeTeacher(i); }} className="text-gray-400 hover:text-red-500">×</button>
+                  <button onClick={() => handleRemoveClick(i)} className="text-gray-400 hover:text-red-500">×</button>
                 </td>
               </tr>
             ))}
