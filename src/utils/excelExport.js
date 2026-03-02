@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { cleanSchedule } from './constants';
+import { makeKey } from './scheduleKey';
 
 // 全体Excel出力
 export function downloadScheduleExcel(project) {
@@ -8,11 +9,11 @@ export function downloadScheduleExcel(project) {
   cleaned.tabs.forEach(tab => {
     const ws = XLSX.utils.aoa_to_sheet([
       ["日付", "時限", ...tab.config.classes],
-      ...tab.config.dates.flatMap(d =>
-        tab.config.periods.map(p => [
+      ...tab.config.dates.flatMap((d, dIdx) =>
+        tab.config.periods.map((p, pIdx) => [
           d, p,
-          ...tab.config.classes.map(c => {
-            const e = tab.schedule[`${d}-${p}-${c}`];
+          ...tab.config.classes.map((c, cIdx) => {
+            const e = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
             return e && e.subject ? `${e.subject}\n${e.teacher}` : "";
           })
         ])
@@ -31,10 +32,10 @@ export function downloadTeacherExcel(project) {
   project.teachers.forEach(t => {
     const personalRows = [["日付", "時限", "クラス", "科目", "場所(タブ)"]];
     project.tabs.forEach(tab => {
-      tab.config.dates.forEach(d => {
-        tab.config.periods.forEach(p => {
-          tab.config.classes.forEach(c => {
-            const k = `${d}-${p}-${c}`;
+      tab.config.dates.forEach((d, dIdx) => {
+        tab.config.periods.forEach((p, pIdx) => {
+          tab.config.classes.forEach((c, cIdx) => {
+            const k = makeKey(dIdx, pIdx, cIdx);
             const entry = tab.schedule[k];
             if (entry && entry.teacher === t.name) {
               const row = [d, p, c, entry.subject, tab.name];

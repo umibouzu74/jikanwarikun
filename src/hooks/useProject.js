@@ -4,43 +4,74 @@ import {
   DEFAULT_TAB_CONFIG_BASE,
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
+  LEGACY_STORAGE_KEYS,
+  CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
+import { makeKey, makeNgKey, makeExternalKey, migrateProject } from '../utils/scheduleKey';
+
+function createNewProject(tabs, teachers) {
+  return {
+    version: CURRENT_PROJECT_VERSION,
+    name: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    teachers: teachers || DEFAULT_INITIAL_TEACHERS,
+    activeTabId: tabs[0]?.id || 1,
+    tabs,
+  };
+}
 
 function loadInitialProject() {
   try {
-    const savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
-    if (savedProject) return JSON.parse(savedProject);
+    // 新キーから読み込み
+    let savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
+
+    // 旧キーからのマイグレーション
+    if (!savedProject) {
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        savedProject = localStorage.getItem(legacyKey);
+        if (savedProject) {
+          // 新キーに移行して旧キーを削除
+          localStorage.setItem(STORAGE_KEY_PROJECT, savedProject);
+          localStorage.removeItem(legacyKey);
+          break;
+        }
+      }
+    }
+
+    if (savedProject) {
+      const parsed = JSON.parse(savedProject);
+      return migrateProject(parsed);
+    }
 
     const savedDefaults = localStorage.getItem(STORAGE_KEY_USER_DEFAULTS);
-    if (savedDefaults) {
-      const defaults = JSON.parse(savedDefaults);
-      return {
-        teachers: defaults.teachers || DEFAULT_INITIAL_TEACHERS,
-        activeTabId: 1,
-        tabs: [{ id: 1, name: "メイン", config: defaults.config || DEFAULT_TAB_CONFIG_BASE, schedule: {} }]
-      };
+    // 旧キーのデフォルト設定も参照
+    const legacyDefaults = !savedDefaults ? localStorage.getItem('winter_schedule_user_defaults') : null;
+    const defaultsStr = savedDefaults || legacyDefaults;
+    if (defaultsStr) {
+      const defaults = JSON.parse(defaultsStr);
+      return createNewProject(
+        [{ id: 1, name: "メイン", config: defaults.config || DEFAULT_TAB_CONFIG_BASE, schedule: {} }],
+        defaults.teachers || DEFAULT_INITIAL_TEACHERS,
+      );
     }
   } catch (e) { console.error("Load failed", e); }
 
-  return {
-    teachers: DEFAULT_INITIAL_TEACHERS,
-    activeTabId: 1,
-    tabs: [
-      {
-        id: 1,
-        name: "中３",
-        config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["３S", "３A", "３B", "３C"] },
-        schedule: {}
-      },
-      {
-        id: 2,
-        name: "中１・２",
-        config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["１S", "１AB", "１附属", "２S", "２AB", "２C", "２附属"] },
-        schedule: {}
-      }
-    ]
-  };
+  return createNewProject([
+    {
+      id: 1,
+      name: "中３",
+      config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["３S", "３A", "３B", "３C"] },
+      schedule: {}
+    },
+    {
+      id: 2,
+      name: "中１・２",
+      config: { ...DEFAULT_TAB_CONFIG_BASE, classes: ["１S", "１AB", "１附属", "２S", "２AB", "２C", "２附属"] },
+      schedule: {}
+    }
+  ]);
 }
 
 export function useProject() {
@@ -67,14 +98,15 @@ export function useProject() {
   }, [project]);
 
   const pushHistory = useCallback((newProject) => {
+    const updated = { ...newProject, updatedAt: new Date().toISOString() };
     setHistory(prev => {
       const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push(newProject);
+      newHistory.push(updated);
       if (newHistory.length > 50) newHistory.shift();
       setHistoryIndex(newHistory.length - 1);
       return newHistory;
     });
-    setProject(newProject);
+    setProject(updated);
   }, [historyIndex]);
 
   const undo = useCallback(() => {
@@ -158,10 +190,10 @@ export function useProject() {
     pushHistory({ ...project, teachers: newTeachers });
   }, [project, pushHistory]);
 
-  const toggleTeacherNg = useCallback((idx, d, p) => {
+  const toggleTeacherNg = useCallback((idx, date, period) => {
     const newTeachers = [...project.teachers];
     const t = { ...newTeachers[idx] };
-    const k = `${d}-${p}`;
+    const k = makeNgKey(date, period);
     if (!t.ngSlots) t.ngSlots = [];
     if (t.ngSlots.includes(k)) t.ngSlots = t.ngSlots.filter(x => x !== k);
     else t.ngSlots = [...t.ngSlots, k];
@@ -184,8 +216,9 @@ export function useProject() {
   }, [project, pushHistory]);
 
   // --- スケジュール操作 ---
-  const handleAssign = useCallback((d, p, c, type, val) => {
-    const k = `${d}-${p}-${c}`;
+  // dIdx, pIdx, cIdx をインデックスとして受け取る
+  const handleAssign = useCallback((dIdx, pIdx, cIdx, type, val) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     if (currentSchedule[k]?.locked) return;
     const e = { ...(currentSchedule[k] || {}) };
     if (type === 'subject') { e.subject = val; e.teacher = ""; } else { e[type] = val; }
@@ -193,8 +226,8 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, currentSchedule, pushHistory]);
 
-  const toggleLock = useCallback((d, p, c) => {
-    const k = `${d}-${p}-${c}`;
+  const toggleLock = useCallback((dIdx, pIdx, cIdx) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const e = { ...(currentSchedule[k] || {}) };
     e.locked = !e.locked;
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: { ...t.schedule, [k]: e } } : t);
@@ -208,29 +241,37 @@ export function useProject() {
     else if (type === 'period') newConfig.periods = newConfig.periods.map(p => p === oldVal ? newVal : p);
     else if (type === 'class') newConfig.classes = newConfig.classes.map(c => c === oldVal ? newVal : c);
 
-    const newSchedule = {};
-    Object.keys(currentSchedule).forEach(k => {
-      let newKey = k;
-      if (type === 'date' && k.startsWith(`${oldVal}-`)) {
-        newKey = k.replace(`${oldVal}-`, `${newVal}-`);
-      } else if (type === 'class' && k.endsWith(`-${oldVal}`)) {
-        newKey = k.substring(0, k.lastIndexOf(`-${oldVal}`)) + `-${newVal}`;
-      } else if (type === 'period') {
-        if (k.includes(`-${oldVal}-`)) newKey = k.replace(`-${oldVal}-`, `-${newVal}-`);
-      }
-      newSchedule[newKey] = currentSchedule[k];
-    });
-
-    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig, schedule: newSchedule } : t);
-    pushHistory({ ...project, tabs: newTabs });
-  }, [project, currentConfig, currentSchedule, pushHistory]);
+    // インデックスベースのキーは config の名称変更に影響されないため、
+    // スケジュールキーの付け替えは不要。
+    // ただし NG スロットの名称も更新する
+    if (type === 'date' || type === 'period') {
+      const newTeachers = project.teachers.map(t => {
+        if (!t.ngSlots || t.ngSlots.length === 0) return t;
+        const newNgSlots = t.ngSlots.map(slot => {
+          if (type === 'date' && slot.startsWith(`${oldVal}-`)) {
+            return slot.replace(`${oldVal}-`, `${newVal}-`);
+          }
+          if (type === 'period' && slot.endsWith(`-${oldVal}`)) {
+            return slot.substring(0, slot.lastIndexOf(`-${oldVal}`)) + `-${newVal}`;
+          }
+          return slot;
+        });
+        return { ...t, ngSlots: newNgSlots };
+      });
+      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
+      pushHistory({ ...project, teachers: newTeachers, tabs: newTabs });
+    } else {
+      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, config: newConfig } : t);
+      pushHistory({ ...project, tabs: newTabs });
+    }
+  }, [project, currentConfig, pushHistory]);
 
   const handleBulkAction = useCallback((action, type, val) => {
     const ns = { ...currentSchedule };
     let upd = false;
-    currentConfig.dates.forEach(date => currentConfig.periods.forEach(per => currentConfig.classes.forEach(cls => {
+    currentConfig.dates.forEach((date, dIdx) => currentConfig.periods.forEach((per, pIdx) => currentConfig.classes.forEach((cls, cIdx) => {
       if ((type === 'date' && date === val) || (type === 'class' && cls === val) || (type === 'period' && per === val)) {
-        const k = `${date}-${per}-${cls}`;
+        const k = makeKey(dIdx, pIdx, cIdx);
         if (!ns[k]) ns[k] = {};
         if (action === 'lock-all') { ns[k] = { ...ns[k], locked: true }; upd = true; }
         if (action === 'unlock-all') { ns[k] = { ...ns[k], locked: false }; upd = true; }
@@ -243,15 +284,15 @@ export function useProject() {
     }
   }, [project, currentConfig, currentSchedule, pushHistory]);
 
-  const handleCellCopy = useCallback((d, p, c) => {
-    const k = `${d}-${p}-${c}`;
+  const handleCellCopy = useCallback((dIdx, pIdx, cIdx) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
     if (curr.subject) return { subject: curr.subject, teacher: curr.teacher };
     return null;
   }, [currentSchedule]);
 
-  const handleCellPaste = useCallback((d, p, c, clipboard) => {
-    const k = `${d}-${p}-${c}`;
+  const handleCellPaste = useCallback((dIdx, pIdx, cIdx, clipboard) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
     if (clipboard && !curr.locked) {
       const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: { ...t.schedule, [k]: { ...curr, subject: clipboard.subject, teacher: clipboard.teacher } } } : t);
@@ -259,8 +300,8 @@ export function useProject() {
     }
   }, [project, currentSchedule, pushHistory]);
 
-  const handleCellClear = useCallback((d, p, c) => {
-    const k = `${d}-${p}-${c}`;
+  const handleCellClear = useCallback((dIdx, pIdx, cIdx) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
     if (!curr.locked) {
       const ns = { ...currentSchedule };
@@ -270,14 +311,18 @@ export function useProject() {
     }
   }, [project, currentSchedule, pushHistory]);
 
-  const handleSetNg = useCallback((d, p, c) => {
-    const k = `${d}-${p}-${c}`;
+  const handleSetNg = useCallback((dIdx, pIdx, cIdx) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
     if (curr.teacher && curr.teacher !== "未定") {
       const teacherIdx = project.teachers.findIndex(t => t.name === curr.teacher);
-      if (teacherIdx >= 0) toggleTeacherNg(teacherIdx, d, p);
+      if (teacherIdx >= 0) {
+        const date = currentConfig.dates[dIdx];
+        const period = currentConfig.periods[pIdx];
+        toggleTeacherNg(teacherIdx, date, period);
+      }
     }
-  }, [currentSchedule, project.teachers, toggleTeacherNg]);
+  }, [currentSchedule, currentConfig, project.teachers, toggleTeacherNg]);
 
   const handleClearUnlocked = useCallback(() => {
     const ns = {};
@@ -286,8 +331,8 @@ export function useProject() {
     pushHistory({ ...project, tabs: newTabs });
   }, [project, currentSchedule, pushHistory]);
 
-  const handleExternalCountChange = useCallback((d, t, v) => {
-    const counts = { ...project.externalCounts, [`${d}-${t}`]: parseInt(v) || 0 };
+  const handleExternalCountChange = useCallback((date, teacherName, v) => {
+    const counts = { ...project.externalCounts, [makeExternalKey(date, teacherName)]: parseInt(v) || 0 };
     pushHistory({ ...project, externalCounts: counts });
   }, [project, pushHistory]);
 
@@ -308,6 +353,7 @@ export function useProject() {
 
   const handleResetAll = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY_PROJECT);
+    LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
     window.location.reload();
   }, []);
 
@@ -323,7 +369,8 @@ export function useProject() {
     r.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        pushHistory(cleanSchedule(data));
+        const migrated = migrateProject(data);
+        pushHistory(cleanSchedule(migrated));
         alert("読込完了");
       } catch { alert("エラー"); }
     };
@@ -337,9 +384,15 @@ export function useProject() {
     const u = URL.createObjectURL(b);
     const a = document.createElement('a');
     a.href = u;
-    a.download = `schedule_project_v45.json`;
+    const datePart = new Date().toISOString().slice(0, 10);
+    const namePart = (project.name || "時間割").replace(/[\\/:?*[\]<>|"]/g, "");
+    a.download = `${namePart}_${datePart}.json`;
     a.click();
   }, [project]);
+
+  const updateProjectName = useCallback((name) => {
+    pushHistory({ ...project, name });
+  }, [project, pushHistory]);
 
   return {
     project,
@@ -387,5 +440,7 @@ export function useProject() {
     applyPattern,
     handleLoadJson,
     handleSaveJson,
+    // メタデータ
+    updateProjectName,
   };
 }

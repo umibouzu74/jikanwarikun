@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { parseKey } from '../utils/scheduleKey';
 
 export default function Toolbar({
   isCompact,
@@ -13,7 +14,6 @@ export default function Toolbar({
   const {
     analysis,
     dashboard,
-    currentConfig,
     historyIndex,
     history,
     undo,
@@ -24,19 +24,9 @@ export default function Toolbar({
   const scrollToFirstError = () => {
     if (analysis.errorKeys.length === 0) return;
     const firstKey = analysis.errorKeys[0];
-    let targetId = null;
-    currentConfig.dates.some((d, dIdx) => {
-      return currentConfig.periods.some((p, pIdx) => {
-        return currentConfig.classes.some((c, cIdx) => {
-          if (`${d}-${p}-${c}` === firstKey) {
-            targetId = `select-${dIdx}-${pIdx}-${cIdx}-cell`;
-            return true;
-          }
-          return false;
-        });
-      });
-    });
-    if (targetId) {
+    const parsed = parseKey(firstKey);
+    if (parsed) {
+      const targetId = `select-${parsed.dIdx}-${parsed.pIdx}-${parsed.cIdx}-cell`;
       const el = document.getElementById(targetId);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

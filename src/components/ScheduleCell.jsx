@@ -1,8 +1,9 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
+import { makeKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
 
-export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onContextMenu, onDragStart, onDrop }) {
+export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMenu, onDragStart, onDrop }) {
   const {
     project,
     currentSchedule,
@@ -13,7 +14,10 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
     toggleLock,
   } = useProjectContext();
 
-  const key = `${d}-${p}-${c}`;
+  const d = currentConfig.dates[dIdx];
+  const p = currentConfig.periods[pIdx];
+
+  const key = makeKey(dIdx, pIdx, cIdx);
   const entry = currentSchedule[key] || {};
   const isLocked = entry.locked;
   const isConflict = analysis.conflictMap[`${d}-${p}-${entry.teacher}`];
@@ -22,7 +26,7 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
   const isOver = maxCnt > 0 && order > maxCnt;
   const filteredTeachers = entry.subject ? project.teachers.filter(t => t.subjects.includes(entry.subject)) : project.teachers;
 
-  const subjDupKey = `${c}-${d}-${entry.subject}`;
+  const subjDupKey = `c${cIdx}-d${dIdx}-${entry.subject}`;
   const isSubjDup = analysis.dailySubjectMap[subjDupKey] > 1;
 
   const cellColor = isConflict ? "bg-red-200" : getSubjectColor(entry.subject);
@@ -50,7 +54,7 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => onDrop(e, key, entry)}
-      onContextMenu={(e) => onContextMenu(e, d, p, c)}
+      onContextMenu={(e) => onContextMenu(e, dIdx, pIdx, cIdx)}
     >
       <div className={`flex flex-col rounded h-full ${cellColor} ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={stripeStyle}>
         <div className="flex justify-between items-center gap-1">
@@ -59,12 +63,12 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
               id={`select-${dIdx}-${pIdx}-${cIdx}-subject`}
               className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-gray-800 min-w-0 ${isSubjDup ? "text-red-600 underline" : ""} ${isCompact ? "text-xs" : "text-base"} ${isLocked ? "pointer-events-none" : ""}`}
               value={entry.subject || ""}
-              onChange={(e) => handleAssign(d, p, c, 'subject', e.target.value)}
+              onChange={(e) => handleAssign(dIdx, pIdx, cIdx, 'subject', e.target.value)}
               onKeyDown={(e) => handleCellNavigation(e, 'subject')}
             >
               <option value="">-</option>
               {commonSubjects.map(s => {
-                const isAlreadyUsed = analysis.dailySubjectMap[`${c}-${d}-${s}`] > 0 && entry.subject !== s;
+                const isAlreadyUsed = analysis.dailySubjectMap[`c${cIdx}-d${dIdx}-${s}`] > 0 && entry.subject !== s;
                 return <option key={s} value={s} disabled={isAlreadyUsed} className={isAlreadyUsed ? "bg-gray-200" : ""}>{s}</option>;
               })}
             </select>
@@ -72,7 +76,7 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
             {isConflict && <span className="text-[10px] bg-red-600 text-white px-1 rounded animate-pulse shrink-0">⚠️重複</span>}
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isOver ? "text-red-600" : "text-gray-700"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
           </div>
-          <button onClick={() => toggleLock(d, p, c)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 ${isCompact ? "text-[10px]" : "text-sm"}`}>
+          <button onClick={() => toggleLock(dIdx, pIdx, cIdx)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 ${isCompact ? "text-[10px]" : "text-sm"}`}>
             {isLocked ? "🔒" : "🔓"}
           </button>
         </div>
@@ -80,14 +84,14 @@ export default function ScheduleCell({ d, p, c, dIdx, pIdx, cIdx, isCompact, onC
           id={`select-${dIdx}-${pIdx}-${cIdx}-teacher`}
           className={`w-full rounded cursor-pointer ${isConflict ? "text-red-800 font-extrabold" : "text-blue-900"} ${isCompact ? "text-[10px] py-0" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50 pointer-events-none" : "bg-white/50 hover:bg-white"}`}
           value={entry.teacher || ""}
-          onChange={(e) => handleAssign(d, p, c, 'teacher', e.target.value)}
+          onChange={(e) => handleAssign(dIdx, pIdx, cIdx, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
         >
           <option value="">-</option>
           {filteredTeachers.map(t => {
-            const dayKey = `${d}-${t.name}`;
+            const dayKey = makeExternalKey(d, t.name);
             const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
-            const isNg = t.ngSlots?.includes(`${d}-${p}`);
+            const isNg = t.ngSlots?.includes(makeNgKey(d, p));
             let label = t.name;
             if (t.name !== "未定") { if (isNg) label += " (NG)"; else label += ` (計${daily.total})`; }
             return <option key={t.name} value={t.name} className={isNg ? "bg-gray-300 text-gray-500" : (daily.total >= 4 ? "bg-yellow-100" : "")} disabled={isNg}>{label}</option>;

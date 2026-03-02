@@ -29,8 +29,13 @@ export const DEFAULT_TAB_CONFIG_BASE = {
 };
 
 // --- localStorage キー ---
-export const STORAGE_KEY_PROJECT = 'winter_schedule_project_v45';
-export const STORAGE_KEY_USER_DEFAULTS = 'winter_schedule_user_defaults';
+export const STORAGE_KEY_PROJECT = 'schedule_project';
+export const STORAGE_KEY_USER_DEFAULTS = 'schedule_user_defaults';
+
+// 旧キー（互換性のため読み込み時に参照）
+export const LEGACY_STORAGE_KEYS = [
+  'winter_schedule_project_v45',
+];
 
 // --- 科目カラー ---
 export const getSubjectColor = (subject) => {
@@ -47,17 +52,23 @@ export const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
+// --- プロジェクトバージョン ---
+export const CURRENT_PROJECT_VERSION = 2;
+
 // --- スケジュールのクリーンアップ ---
 export const cleanSchedule = (proj) => {
   const newTabs = proj.tabs.map(tab => {
     const newSch = {};
-    tab.config.dates.forEach(d => {
-      tab.config.periods.forEach(p => {
-        tab.config.classes.forEach(c => {
-          const k = `${d}-${p}-${c}`;
-          if (tab.schedule[k]) newSch[k] = tab.schedule[k];
+    const validKeys = new Set();
+    tab.config.dates.forEach((_, dIdx) => {
+      tab.config.periods.forEach((_, pIdx) => {
+        tab.config.classes.forEach((_, cIdx) => {
+          validKeys.add(`d${dIdx}-p${pIdx}-c${cIdx}`);
         });
       });
+    });
+    Object.keys(tab.schedule).forEach(k => {
+      if (validKeys.has(k)) newSch[k] = tab.schedule[k];
     });
     return { ...tab, schedule: newSch };
   });

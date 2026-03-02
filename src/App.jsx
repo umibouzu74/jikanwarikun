@@ -11,11 +11,11 @@ import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 
 function ScheduleApp() {
-  useEffect(() => {
-    document.title = "時間割作成くん";
-  }, []);
-
   const { project } = useProjectContext();
+
+  useEffect(() => {
+    document.title = project.name ? `${project.name} - 時間割作成くん` : "時間割作成くん";
+  }, [project.name]);
 
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -41,9 +41,9 @@ function ScheduleApp() {
     }, 100);
   };
 
-  const handleContextMenu = (e, d, p, c, type = null, val = null) => {
+  const handleContextMenu = (e, dIdx, pIdx, cIdx, type = null, val = null) => {
     e.preventDefault();
-    setContextMenu({ x: e.pageX, y: e.pageY, d, p, c, type, val });
+    setContextMenu({ x: e.pageX, y: e.pageY, dIdx, pIdx, cIdx, type, val });
   };
 
   const handleContextMenuClose = (copiedData) => {

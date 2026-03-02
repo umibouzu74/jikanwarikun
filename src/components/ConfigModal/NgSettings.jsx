@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { makeNgKey } from '../../utils/scheduleKey';
 
 export default function NgSettings() {
   const {
@@ -20,7 +21,7 @@ export default function NgSettings() {
             <th className="border p-2 bg-gray-100 sticky left-0 z-20">講師名</th>
             {currentConfig.dates.map(d => (
               currentConfig.periods.map(p => (
-                <th key={`${d}-${p}`} className="border p-1 bg-gray-50 font-normal min-w-[40px] text-center">
+                <th key={makeNgKey(d, p)} className="border p-1 bg-gray-50 font-normal min-w-[40px] text-center">
                   {d}<br />{p}
                 </th>
               ))
@@ -33,7 +34,7 @@ export default function NgSettings() {
               <td className="border p-2 font-bold bg-gray-50 sticky left-0 z-10">{t.name}</td>
               {currentConfig.dates.map(d => (
                 currentConfig.periods.map(p => {
-                  const k = `${d}-${p}`;
+                  const k = makeNgKey(d, p);
                   const isNg = t.ngSlots?.includes(k);
                   return (
                     <td

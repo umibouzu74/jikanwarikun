@@ -1,0 +1,109 @@
+// スケジュールキーのユーティリティ
+// 新形式: "d0-p1-c2" （インデックスベース）
+// 旧形式: "12/25(木)-1限 (13:00~)-３S" （日本語文字列結合）
+
+// --- キー生成・パース ---
+
+export const makeKey = (dIdx, pIdx, cIdx) => `d${dIdx}-p${pIdx}-c${cIdx}`;
+
+export const parseKey = (key) => {
+  const m = key.match(/^d(\d+)-p(\d+)-c(\d+)$/);
+  if (!m) return null;
+  return { dIdx: parseInt(m[1]), pIdx: parseInt(m[2]), cIdx: parseInt(m[3]) };
+};
+
+// インデックスキーから実際の値を解決
+export const resolveKey = (key, config) => {
+  const parsed = parseKey(key);
+  if (!parsed) return null;
+  return {
+    date: config.dates[parsed.dIdx],
+    period: config.periods[parsed.pIdx],
+    class: config.classes[parsed.cIdx],
+  };
+};
+
+// --- NG スロットキー ---
+// NG はタブ横断で使うため、日付名・時限名ベースのまま維持
+// （config 変更時にインデックスがずれる問題を避けるため）
+export const makeNgKey = (date, period) => `${date}-${period}`;
+
+// --- 外部カウントキー ---
+// 講師の日別外部コマ数: "日付名-講師名"
+export const makeExternalKey = (date, teacherName) => `${date}-${teacherName}`;
+
+// --- 旧形式の検出 ---
+export const isLegacyKey = (key) => {
+  // 新形式は "d数字-p数字-c数字" のパターン
+  return !(/^d\d+-p\d+-c\d+$/.test(key));
+};
+
+// --- マイグレーション ---
+
+// 旧形式のスケジュールキーをインデックスベースに変換
+export function migrateScheduleKeys(schedule, config) {
+  const hasLegacy = Object.keys(schedule).some(isLegacyKey);
+  if (!hasLegacy) return schedule;
+
+  const newSchedule = {};
+  Object.keys(schedule).forEach(oldKey => {
+    if (!isLegacyKey(oldKey)) {
+      // 既に新形式
+      newSchedule[oldKey] = schedule[oldKey];
+      return;
+    }
+
+    // 旧形式: "日付-時限-クラス" → インデックスを探す
+    // 旧キーは「日付-時限-クラス」だが、日付・時限・クラスの文字列自体に "-" を含む可能性がある
+    // そのため、既知の config 値からマッチングを行う
+    let matched = false;
+    for (let dIdx = 0; dIdx < config.dates.length; dIdx++) {
+      const d = config.dates[dIdx];
+      if (!oldKey.startsWith(d + '-')) continue;
+      const rest1 = oldKey.substring(d.length + 1);
+      for (let pIdx = 0; pIdx < config.periods.length; pIdx++) {
+        const p = config.periods[pIdx];
+        if (!rest1.startsWith(p + '-')) continue;
+        const rest2 = rest1.substring(p.length + 1);
+        const cIdx = config.classes.indexOf(rest2);
+        if (cIdx >= 0) {
+          newSchedule[makeKey(dIdx, pIdx, cIdx)] = schedule[oldKey];
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
+    }
+
+    if (!matched) {
+      // マッチしなかった場合は破棄（config が変わっていて対応するスロットがない）
+      console.warn('Migration: could not map legacy key:', oldKey);
+    }
+  });
+
+  return newSchedule;
+}
+
+// 旧形式の NG スロットキーをマイグレーション（NG は文字列ベースのまま維持するので変換不要）
+
+// プロジェクト全体のマイグレーション
+export function migrateProject(project) {
+  if (!project) return project;
+
+  // version が 2 以上なら既に新形式
+  if (project.version >= 2) return project;
+
+  const migratedTabs = project.tabs.map(tab => ({
+    ...tab,
+    schedule: migrateScheduleKeys(tab.schedule, tab.config),
+  }));
+
+  return {
+    ...project,
+    version: 2,
+    name: project.name || "",
+    createdAt: project.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tabs: migratedTabs,
+  };
+}

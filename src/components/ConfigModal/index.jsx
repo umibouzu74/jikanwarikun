@@ -8,7 +8,7 @@ import NgSettings from './NgSettings';
 
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
-  const { handleResetAll } = useProjectContext();
+  const { project, handleResetAll, updateProjectName } = useProjectContext();
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4 no-print">
@@ -31,10 +31,27 @@ export default function ConfigModal({ onClose }) {
           ) : configTab === 'classes' ? (
             <ClassPriority />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <BasicSettings />
-              <TeacherManager />
-            </div>
+            <>
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded">
+                <label className="block text-sm font-bold text-gray-700 mb-1">プロジェクト名</label>
+                <input
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  value={project.name || ""}
+                  onChange={(e) => updateProjectName(e.target.value)}
+                  placeholder="例: 2026年度 冬期講習"
+                />
+                {project.createdAt && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    作成日: {new Date(project.createdAt).toLocaleDateString('ja-JP')}
+                    {project.updatedAt && <> / 更新日: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}</>}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <BasicSettings />
+                <TeacherManager />
+              </div>
+            </>
           )}
           <div className="mt-6 border-t pt-4 text-right">
             <button onClick={() => { if (window.confirm("全データ削除しますか？")) handleResetAll(); }} className="text-xs text-red-500 hover:text-red-700 underline">⚠️ すべてのデータをリセット</button>
