@@ -10,7 +10,7 @@ import {
   CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
-import { makeKey, makeNgKey, makeExternalKey, migrateProject, findCombinedGroup } from '../utils/scheduleKey';
+import { makeKey, parseKey, makeNgKey, makeExternalKey, migrateProject, findCombinedGroup } from '../utils/scheduleKey';
 
 // 講師マスタの差分を検出する
 function detectTeacherDiffs(currentTeachers, loadedTeachers) {
@@ -466,10 +466,49 @@ export function useProject() {
     const k = makeKey(dIdx, pIdx, cIdx);
     const curr = currentSchedule[k] || {};
     if (clipboard && !curr.locked) {
-      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: { ...t.schedule, [k]: { ...curr, subject: clipboard.subject, teacher: clipboard.teacher } } } : t);
+      let ns = { ...currentSchedule };
+      const date = currentConfig.dates[dIdx];
+      const className = currentConfig.classes[cIdx];
+
+      // 旧科目の合同グループをクリア
+      if (curr.subject && curr.subject !== clipboard.subject) {
+        const oldGroup = findCombinedGroup(project.combinedGroups, curr.subject, className, date);
+        if (oldGroup) {
+          oldGroup.classes.forEach(gc => {
+            const gci = currentConfig.classes.indexOf(gc);
+            if (gci >= 0 && gci !== cIdx) {
+              const gk = makeKey(dIdx, pIdx, gci);
+              if (ns[gk]?.subject === curr.subject && !ns[gk]?.locked) {
+                delete ns[gk];
+              }
+            }
+          });
+        }
+      }
+
+      // ペースト実行
+      ns[k] = { ...curr, subject: clipboard.subject, teacher: clipboard.teacher };
+
+      // 新科目の合同グループに伝播
+      if (clipboard.subject) {
+        const newGroup = findCombinedGroup(project.combinedGroups, clipboard.subject, className, date);
+        if (newGroup) {
+          newGroup.classes.forEach(gc => {
+            const gci = currentConfig.classes.indexOf(gc);
+            if (gci >= 0 && gci !== cIdx) {
+              const gk = makeKey(dIdx, pIdx, gci);
+              if (!ns[gk]?.locked) {
+                ns[gk] = { ...(ns[gk] || {}), subject: clipboard.subject, teacher: clipboard.teacher };
+              }
+            }
+          });
+        }
+      }
+
+      const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
       pushHistory({ ...project, tabs: newTabs });
     }
-  }, [project, currentSchedule, pushHistory]);
+  }, [project, currentSchedule, currentConfig, pushHistory]);
 
   const handleCellClear = useCallback((dIdx, pIdx, cIdx) => {
     const k = makeKey(dIdx, pIdx, cIdx);
@@ -526,12 +565,61 @@ export function useProject() {
 
   const handleSwapCells = useCallback((sourceKey, sourceData, targetKey, targetData) => {
     if (targetData.locked) return;
+    const sParsed = parseKey(sourceKey);
+    const tParsed = parseKey(targetKey);
+    if (!sParsed || !tParsed) return;
+
     const ns = { ...currentSchedule };
+
+    // スワップ前: 旧合同グループのセカンダリをクリア
+    const clearOldCombined = (parsed, data) => {
+      if (!data.subject) return;
+      const date = currentConfig.dates[parsed.dIdx];
+      const cls = currentConfig.classes[parsed.cIdx];
+      const group = findCombinedGroup(project.combinedGroups, data.subject, cls, date);
+      if (group) {
+        group.classes.forEach(gc => {
+          const gci = currentConfig.classes.indexOf(gc);
+          if (gci >= 0 && gci !== parsed.cIdx) {
+            const gk = makeKey(parsed.dIdx, parsed.pIdx, gci);
+            if (ns[gk]?.subject === data.subject && !ns[gk]?.locked) {
+              delete ns[gk];
+            }
+          }
+        });
+      }
+    };
+    clearOldCombined(sParsed, sourceData);
+    clearOldCombined(tParsed, targetData);
+
+    // スワップ実行
     ns[sourceKey] = { ...targetData, locked: false };
     ns[targetKey] = { ...sourceData, locked: false };
+
+    // スワップ後: 新合同グループに伝播
+    const propagateNewCombined = (parsed, entry) => {
+      if (!entry.subject) return;
+      const date = currentConfig.dates[parsed.dIdx];
+      const cls = currentConfig.classes[parsed.cIdx];
+      const group = findCombinedGroup(project.combinedGroups, entry.subject, cls, date);
+      if (group) {
+        group.classes.forEach(gc => {
+          const gci = currentConfig.classes.indexOf(gc);
+          if (gci >= 0 && gci !== parsed.cIdx) {
+            const gk = makeKey(parsed.dIdx, parsed.pIdx, gci);
+            if (!ns[gk]?.locked) {
+              ns[gk] = { ...(ns[gk] || {}), subject: entry.subject, teacher: entry.teacher };
+            }
+          }
+        });
+      }
+    };
+    propagateNewCombined(sParsed, ns[sourceKey]);
+    propagateNewCombined(tParsed, ns[targetKey]);
+
     const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: ns } : t);
     pushHistory({ ...project, tabs: newTabs });
-  }, [project, currentSchedule, pushHistory]);
+  }, [project, currentSchedule, currentConfig, pushHistory]);
 
   // --- 保存/読込 ---
   const handleSaveAsDefault = useCallback(() => {
