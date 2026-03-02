@@ -10,7 +10,7 @@ import {
   CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
-import { makeKey, makeNgKey, makeExternalKey, migrateProject } from '../utils/scheduleKey';
+import { makeKey, makeNgKey, makeExternalKey, migrateProject, findCombinedGroup } from '../utils/scheduleKey';
 
 // 講師マスタの差分を検出する
 function detectTeacherDiffs(currentTeachers, loadedTeachers) {
@@ -56,6 +56,7 @@ function createNewProject(tabs, teachers, subjectColors, subjects) {
     tabs,
     subjects: subjects || [...DEFAULT_SUBJECTS],
     subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
+    combinedGroups: [],
   };
 }
 
@@ -333,9 +334,68 @@ export function useProject() {
     if (currentSchedule[k]?.locked) return;
     const e = { ...(currentSchedule[k] || {}) };
     if (type === 'subject') { e.subject = val; e.teacher = ""; } else { e[type] = val; }
-    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: { ...t.schedule, [k]: e } } : t);
+
+    let newSchedule = { ...currentSchedule, [k]: e };
+
+    // 合同グループの伝播
+    const date = currentConfig.dates[dIdx];
+    const subject = type === 'subject' ? val : e.subject;
+
+    if (type === 'subject') {
+      // 旧科目の合同グループをクリア
+      const oldSubject = (currentSchedule[k] || {}).subject;
+      if (oldSubject && oldSubject !== val) {
+        const oldClassName = currentConfig.classes[cIdx];
+        const oldGroup = findCombinedGroup(project.combinedGroups, oldSubject, oldClassName, date);
+        if (oldGroup) {
+          oldGroup.classes.forEach(gc => {
+            const gci = currentConfig.classes.indexOf(gc);
+            if (gci >= 0 && gci !== cIdx) {
+              const gk = makeKey(dIdx, pIdx, gci);
+              if (newSchedule[gk]?.subject === oldSubject && !newSchedule[gk]?.locked) {
+                const { [gk]: _, ...rest } = newSchedule;
+                newSchedule = rest;
+              }
+            }
+          });
+        }
+      }
+      // 新科目の合同グループに伝播
+      if (val) {
+        const className = currentConfig.classes[cIdx];
+        const group = findCombinedGroup(project.combinedGroups, val, className, date);
+        if (group) {
+          group.classes.forEach(gc => {
+            const gci = currentConfig.classes.indexOf(gc);
+            if (gci >= 0 && gci !== cIdx) {
+              const gk = makeKey(dIdx, pIdx, gci);
+              if (!newSchedule[gk]?.locked) {
+                newSchedule[gk] = { ...(newSchedule[gk] || {}), subject: val, teacher: "" };
+              }
+            }
+          });
+        }
+      }
+    } else if (type === 'teacher' && subject) {
+      // 講師変更を合同グループに伝播
+      const className = currentConfig.classes[cIdx];
+      const group = findCombinedGroup(project.combinedGroups, subject, className, date);
+      if (group) {
+        group.classes.forEach(gc => {
+          const gci = currentConfig.classes.indexOf(gc);
+          if (gci >= 0 && gci !== cIdx) {
+            const gk = makeKey(dIdx, pIdx, gci);
+            if (newSchedule[gk]?.subject === subject && !newSchedule[gk]?.locked) {
+              newSchedule[gk] = { ...newSchedule[gk], teacher: val };
+            }
+          }
+        });
+      }
+    }
+
+    const newTabs = project.tabs.map(t => t.id === project.activeTabId ? { ...t, schedule: newSchedule } : t);
     pushHistory({ ...project, tabs: newTabs });
-  }, [project, currentSchedule, pushHistory]);
+  }, [project, currentSchedule, currentConfig, pushHistory]);
 
   const toggleLock = useCallback((dIdx, pIdx, cIdx) => {
     const k = makeKey(dIdx, pIdx, cIdx);
@@ -525,6 +585,24 @@ export function useProject() {
     pushHistory({ ...project, subjectColors: newColors });
   }, [project, pushHistory]);
 
+  // --- 合同グループ管理 ---
+  const addCombinedGroup = useCallback((group) => {
+    const groups = project.combinedGroups || [];
+    const newId = groups.reduce((max, g) => Math.max(max, g.id), 0) + 1;
+    const newGroup = { ...group, id: newId };
+    pushHistory({ ...project, combinedGroups: [...groups, newGroup] });
+  }, [project, pushHistory]);
+
+  const updateCombinedGroup = useCallback((id, updates) => {
+    const newGroups = (project.combinedGroups || []).map(g => g.id === id ? { ...g, ...updates } : g);
+    pushHistory({ ...project, combinedGroups: newGroups });
+  }, [project, pushHistory]);
+
+  const removeCombinedGroup = useCallback((id) => {
+    const newGroups = (project.combinedGroups || []).filter(g => g.id !== id);
+    pushHistory({ ...project, combinedGroups: newGroups });
+  }, [project, pushHistory]);
+
   return {
     project,
     setProject,
@@ -580,5 +658,9 @@ export function useProject() {
     updateProjectName,
     // 科目カラー
     updateSubjectColor,
+    // 合同グループ
+    addCombinedGroup,
+    updateCombinedGroup,
+    removeCombinedGroup,
   };
 }

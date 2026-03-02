@@ -1,6 +1,6 @@
 // 自動生成ロジック（MRV法 + バックトラッキング）
 // 純粋関数として抽出。UI依存なし。
-import { makeKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup } from '../utils/scheduleKey';
 
 // シード付き疑似乱数生成器 (Mulberry32)
 function mulberry32(seed) {
@@ -35,6 +35,7 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
   const currentSchedule = activeTab.schedule;
   const currentConfig = activeTab.config;
   const commonSubjects = Object.keys(currentConfig.subjectCounts);
+  const combinedGroups = project.combinedGroups || [];
 
   const baseDailyCounts = {};
   project.teachers.forEach(t => {
@@ -131,6 +132,13 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
     }
 
     const { dIdx, pIdx, cIdx, d, p, c, k, fixedSubject } = slots[idx];
+
+    // 合同グループの伝播により既に充填されている場合はスキップ
+    if (tempSch[k]?.subject && tempSch[k]?.teacher) {
+      solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
+      return;
+    }
+
     const subjectsToTry = fixedSubject ? [fixedSubject] : seededShuffle(commonSubjects, rng);
 
     for (const s of subjectsToTry) {
@@ -138,11 +146,62 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
       // 同日・同クラスに同じ科目があるかチェック
       if (!fixedSubject && currentConfig.periods.some((per, pi) => tempSch[makeKey(dIdx, pi, cIdx)]?.subject === s)) continue;
 
-      const validT = project.teachers.filter(t =>
-        t.subjects.includes(s) &&
-        !t.ngSlots?.includes(makeNgKey(d, p)) &&
-        !t.ngClasses?.includes(c)
-      );
+      // 合同グループチェック
+      const group = findCombinedGroup(combinedGroups, s, c, d);
+      let secondarySlots = [];
+      let canUseCombined = true;
+
+      if (group) {
+        for (const otherClass of group.classes) {
+          if (otherClass === c) continue;
+          const otherCIdx = currentConfig.classes.indexOf(otherClass);
+          if (otherCIdx < 0) continue;
+          const otherKey = makeKey(dIdx, pIdx, otherCIdx);
+          const otherEntry = tempSch[otherKey];
+
+          // ロックされていて別の科目が入っている場合は不可
+          if (otherEntry?.locked && otherEntry.subject !== s) {
+            canUseCombined = false;
+            break;
+          }
+          // 別の科目が既に入っている場合は不可
+          if (otherEntry?.subject && otherEntry.subject !== s) {
+            canUseCombined = false;
+            break;
+          }
+          // 科目枠が残っていない場合は不可
+          if (!otherEntry?.subject && (tempCnt[otherCIdx]?.[s] || 0) >= currentConfig.subjectCounts[s]) {
+            canUseCombined = false;
+            break;
+          }
+          // 同日・同クラスに同じ科目が既にある場合は不可
+          if (!otherEntry?.subject && currentConfig.periods.some((per, pi) => pi !== pIdx && tempSch[makeKey(dIdx, pi, otherCIdx)]?.subject === s)) {
+            canUseCombined = false;
+            break;
+          }
+
+          // 未充填のセカンダリスロットを収集
+          if (!otherEntry?.subject || !otherEntry?.teacher) {
+            secondarySlots.push({ cIdx: otherCIdx, key: otherKey, className: otherClass });
+          }
+        }
+
+        if (!canUseCombined) continue;
+      }
+
+      // 有効な講師を検索
+      const validT = project.teachers.filter(t => {
+        if (!t.subjects.includes(s)) return false;
+        if (t.ngSlots?.includes(makeNgKey(d, p))) return false;
+        if (t.ngClasses?.includes(c)) return false;
+        // 合同グループの場合、セカンダリクラスのNGもチェック
+        if (group) {
+          for (const ss of secondarySlots) {
+            if (t.ngClasses?.includes(ss.className)) return false;
+          }
+        }
+        return true;
+      });
 
       const priorityGroup = [];
       const neutralGroup = [];
@@ -156,23 +215,47 @@ export function generateSinglePattern({ project, activeTabId, seed = 0 }) {
         ...seededShuffle(neutralGroup, rng)
       ];
 
+      // 合同グループのクラスインデックスリスト
+      const combinedClassIndices = group
+        ? group.classes.map(gc => currentConfig.classes.indexOf(gc)).filter(i => i >= 0)
+        : [];
+
       for (const tObj of shuffledT) {
         const tName = tObj.name;
         const dayKey = makeExternalKey(d, tName);
 
-        // 同じ日付・時限で他クラスに同じ講師がいるかチェック（ダブルブッキング防止）
-        if (currentConfig.classes.some((oc, oci) => oci !== cIdx && tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName)) continue;
+        // 同じ日付・時限で他クラスに同じ講師がいるかチェック（合同グループ内は除外）
+        if (currentConfig.classes.some((oc, oci) =>
+          oci !== cIdx &&
+          !combinedClassIndices.includes(oci) &&
+          tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName
+        )) continue;
 
+        // プライマリスロットを割り当て
         tempSch[k] = { subject: s, teacher: tName };
         if (!fixedSubject) tempCnt[cIdx][s]++;
-        if (!tempDaily[dayKey]) tempDaily[dayKey] = 0; tempDaily[dayKey]++;
+        if (!tempDaily[dayKey]) tempDaily[dayKey] = 0;
+        tempDaily[dayKey]++; // 合同でも1コマとしてカウント
+
+        // セカンダリスロットを割り当て
+        secondarySlots.forEach(ss => {
+          tempSch[ss.key] = { subject: s, teacher: tName };
+          if (tempCnt[ss.cIdx]) tempCnt[ss.cIdx][s] = (tempCnt[ss.cIdx][s] || 0) + 1;
+        });
 
         solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
         if (solution !== null) return;
 
+        // バックトラック: プライマリスロット
         if (fixedSubject) tempSch[k] = { subject: fixedSubject, teacher: "" };
         else { delete tempSch[k]; tempCnt[cIdx][s]--; }
         tempDaily[dayKey]--;
+
+        // バックトラック: セカンダリスロット
+        secondarySlots.forEach(ss => {
+          delete tempSch[ss.key];
+          if (tempCnt[ss.cIdx]) tempCnt[ss.cIdx][s]--;
+        });
       }
     }
   };

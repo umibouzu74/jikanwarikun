@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx-js-style';
 import { cleanSchedule, getSubjectColor } from './constants';
-import { makeKey } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass } from './scheduleKey';
 
 // --- 共通スタイル定義 ---
 
@@ -73,13 +73,20 @@ export function downloadScheduleExcel(project) {
     const { dates, periods, classes } = tab.config;
     const subjectColors = project.subjectColors || {};
 
+    const combinedGroups = project.combinedGroups || [];
+
     // データ行を構築
     const headerRow = ["日付", "時限", ...classes];
     const dataRows = dates.flatMap((d, dIdx) =>
       periods.map((p, pIdx) =>
         [d, p, ...classes.map((c, cIdx) => {
           const e = tab.schedule[makeKey(dIdx, pIdx, cIdx)];
-          return e && e.subject ? `${e.subject}\n${e.teacher}` : "";
+          if (!e || !e.subject) return "";
+          const group = findCombinedGroup(combinedGroups, e.subject, c, d);
+          if (group && !isPrimaryCombinedClass(group, c)) {
+            return `${e.subject}\n(合同)`;
+          }
+          return `${e.subject}\n${e.teacher}`;
         })]
       )
     );
@@ -170,11 +177,12 @@ export function downloadTeacherExcel(project) {
     border: THIN_BORDER,
   };
 
-  const allRows = [["講師名", "日付", "時限", "クラス", "科目", "タブ名"]];
+  const combinedGroups = project.combinedGroups || [];
+  const allRows = [["講師名", "日付", "時限", "クラス", "科目", "タブ名", "備考"]];
   const allRowSubjects = [null]; // ヘッダー行は null
 
   project.teachers.forEach(t => {
-    const personalRows = [["日付", "時限", "クラス", "科目", "場所(タブ)"]];
+    const personalRows = [["日付", "時限", "クラス", "科目", "場所(タブ)", "備考"]];
     const personalSubjects = [null]; // ヘッダー行は null
 
     project.tabs.forEach(tab => {
@@ -184,7 +192,9 @@ export function downloadTeacherExcel(project) {
             const k = makeKey(dIdx, pIdx, cIdx);
             const entry = tab.schedule[k];
             if (entry && entry.teacher === t.name) {
-              const row = [d, p, c, entry.subject, tab.name];
+              const group = findCombinedGroup(combinedGroups, entry.subject, c, d);
+              const note = group ? `合同(${group.classes.join(',')})` : "";
+              const row = [d, p, c, entry.subject, tab.name, note];
               personalRows.push(row);
               personalSubjects.push(entry.subject);
               allRows.push([t.name, ...row]);
@@ -197,18 +207,18 @@ export function downloadTeacherExcel(project) {
 
     if (personalRows.length > 1) {
       const ws = XLSX.utils.aoa_to_sheet(personalRows);
-      ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }];
+      ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
 
       // ヘッダースタイル
       const styles = {};
-      for (let c = 0; c < 5; c++) {
+      for (let c = 0; c < 6; c++) {
         const cellRef = XLSX.utils.encode_cell({ r: 0, c });
         styles[cellRef] = teacherHeaderStyle;
       }
       // データ行スタイル
       for (let r = 1; r < personalRows.length; r++) {
         const subject = personalSubjects[r];
-        for (let c = 0; c < 5; c++) {
+        for (let c = 0; c < 6; c++) {
           const cellRef = XLSX.utils.encode_cell({ r, c });
           if (c === 3 && subject) {
             // 科目列にカラーを適用
@@ -231,18 +241,18 @@ export function downloadTeacherExcel(project) {
 
   // 全講師リストシート
   const wsAll = XLSX.utils.aoa_to_sheet(allRows);
-  wsAll['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }];
+  wsAll['!cols'] = [{ wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 18 }];
 
   const allStyles = {};
   // ヘッダースタイル
-  for (let c = 0; c < 6; c++) {
+  for (let c = 0; c < 7; c++) {
     const cellRef = XLSX.utils.encode_cell({ r: 0, c });
     allStyles[cellRef] = teacherHeaderStyle;
   }
   // データ行スタイル
   for (let r = 1; r < allRows.length; r++) {
     const subject = allRowSubjects[r];
-    for (let c = 0; c < 6; c++) {
+    for (let c = 0; c < 7; c++) {
       const cellRef = XLSX.utils.encode_cell({ r, c });
       if (c === 4 && subject) {
         // 科目列にカラーを適用

@@ -1,11 +1,11 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
-import { makeExternalKey } from '../utils/scheduleKey';
+import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
 
-function SummaryTable({ target, teachers }) {
-  const totals = {};
-  teachers.forEach(t => totals[t.name] = 0);
-  Object.values(target).forEach(e => { if (e.teacher && e.teacher !== "未定") totals[e.teacher]++; });
+function SummaryTable({ target, config, combinedGroups }) {
+  const totals = countTeacherHoursWithCombined(target, config, combinedGroups);
+  // 未定を除外
+  delete totals["未定"];
   return (
     <div className="bg-white p-4 border rounded">
       <h3 className="font-bold mb-2">📊 この案の集計</h3>
@@ -76,7 +76,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                     </span>
                   )}
                 </div>
-                <SummaryTable target={pat.schedule} teachers={project.teachers} />
+                <SummaryTable target={pat.schedule} config={currentConfig} combinedGroups={project.combinedGroups || []} />
                 <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
                   この案を採用
                 </button>
