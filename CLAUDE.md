@@ -168,3 +168,27 @@ Dates, periods, and classes are configurable per-tab via `config` object. Defaul
 
 ### Changing localStorage version
 Update the `STORAGE_KEY_PROJECT` constant. This forces a fresh start for users (old data won't load automatically).
+
+## 現在の改修プロジェクト
+
+このリポジトリは現在、大規模な改修を進行中です。
+詳細な計画・設計・課題は handoff.md を参照してください。
+
+### 改修の概要
+- App.jsx 単一ファイル（約870行）→ コンポーネント分割
+- データ構造の改善（スケジュールキーのインデックスベース化）
+- UI/UX改善（alert/prompt廃止、科目カラー固定化、設定画面改善）
+- 自動生成ロジックの強化（複数案生成、部分解対応）
+- 汎用化（冬期講習固有の文言排除、テンプレート機能）
+
+### コーディング規約
+- 日本語コメント可
+- コンポーネントは関数コンポーネント + Hooks
+- スタイリングは Tailwind ユーティリティクラスのみ
+- 状態管理は React Context + useReducer を使用予定
+- UIライブラリは導入しない（Tailwind で完結）
+
+### 作業の進め方
+- handoff.md の Step 順に進める
+- Step 1（基盤整備）と Step 2（UI/UX改善）を同時進行
+- 各 Step は PR 単位で区切る
