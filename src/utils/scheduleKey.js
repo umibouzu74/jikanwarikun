@@ -32,6 +32,53 @@ export const makeNgKey = (date, period) => `${date}-${period}`;
 // 講師の日別外部コマ数: "日付名-講師名"
 export const makeExternalKey = (date, teacherName) => `${date}-${teacherName}`;
 
+// --- 合同グループヘルパー ---
+
+// 指定の科目・クラス・日付に該当する合同グループを検索
+export function findCombinedGroup(combinedGroups, subject, className, date) {
+  if (!combinedGroups || !subject) return null;
+  return combinedGroups.find(g =>
+    g.subject === subject &&
+    g.classes.includes(className) &&
+    (g.dates === null || g.dates.includes(date))
+  ) || null;
+}
+
+// クラスが合同グループの代表（先頭）クラスかどうか
+export function isPrimaryCombinedClass(group, className) {
+  return group && group.classes[0] === className;
+}
+
+// 合同グループを考慮した講師コマ数カウント
+export function countTeacherHoursWithCombined(schedule, config, combinedGroups) {
+  const totals = {};
+  const counted = new Set();
+
+  Object.keys(schedule).forEach(key => {
+    const entry = schedule[key];
+    if (!entry || !entry.teacher || entry.teacher === "未定") return;
+
+    const parsed = parseKey(key);
+    if (!parsed) return;
+    const { dIdx, pIdx, cIdx } = parsed;
+    const date = config.dates?.[dIdx];
+    const className = config.classes?.[cIdx];
+    if (!date || !className) return;
+
+    const group = findCombinedGroup(combinedGroups, entry.subject, className, date);
+    if (group) {
+      const countKey = `${dIdx}-${pIdx}-${group.id}-${entry.teacher}`;
+      if (counted.has(countKey)) return;
+      counted.add(countKey);
+    }
+
+    if (!totals[entry.teacher]) totals[entry.teacher] = 0;
+    totals[entry.teacher]++;
+  });
+
+  return totals;
+}
+
 // --- 旧形式の検出 ---
 export const isLegacyKey = (key) => {
   // 新形式は "d数字-p数字-c数字" のパターン
@@ -119,6 +166,11 @@ export function migrateProject(project) {
     const firstTab = result.tabs[0];
     const subjects = firstTab ? Object.keys(firstTab.config.subjectCounts) : [];
     result = { ...result, subjects };
+  }
+
+  // combinedGroups が未設定の場合は空配列で初期化
+  if (!result.combinedGroups) {
+    result = { ...result, combinedGroups: [] };
   }
 
   return result;

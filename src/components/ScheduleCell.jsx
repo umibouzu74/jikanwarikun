@@ -1,7 +1,7 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
-import { makeKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
+import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, isPrimaryCombinedClass } from '../utils/scheduleKey';
 
 export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMenu, onDragStart, onDrop }) {
   const {
@@ -29,8 +29,15 @@ export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMen
   const subjDupKey = `c${cIdx}-d${dIdx}-${entry.subject}`;
   const isSubjDup = analysis.dailySubjectMap[subjDupKey] > 1;
 
+  // 合同グループ判定
+  const className = currentConfig.classes[cIdx];
+  const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, className, d) : null;
+  const isCombined = !!combinedGroup;
+  const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, className);
+
   const cellBgColor = isConflict ? "#FECACA" : getSubjectColor(entry.subject, project.subjectColors);
-  const lockedStyle = isLocked ? "border-2 border-gray-600 opacity-90" : "border border-gray-200";
+  const combinedBorder = isCombined ? (isPrimary ? "border-2 border-purple-500" : "border-2 border-purple-300 border-dashed") : "";
+  const lockedStyle = isLocked ? "border-2 border-gray-600 opacity-90" : (combinedBorder || "border border-gray-200");
   const cellStyle = {
     ...(cellBgColor ? { backgroundColor: cellBgColor } : {}),
     ...(isLocked ? { backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' } : {}),
@@ -78,6 +85,7 @@ export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMen
             {isSubjDup && <span className={`bg-red-600 text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
             {isConflict && <span className={`bg-red-600 text-white rounded animate-pulse shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️重複</span>}
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-red-600" : "text-gray-700"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
+            {isCombined && <span className={`bg-purple-600 text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
           <button onClick={() => toggleLock(dIdx, pIdx, cIdx)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`}>
             {isLocked ? "🔒" : "🔓"}
