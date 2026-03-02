@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   DEFAULT_INITIAL_TEACHERS,
   DEFAULT_TAB_CONFIG_BASE,
+  DEFAULT_SUBJECT_COLORS,
   STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
   LEGACY_STORAGE_KEYS,
@@ -10,7 +11,7 @@ import {
 } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, migrateProject } from '../utils/scheduleKey';
 
-function createNewProject(tabs, teachers) {
+function createNewProject(tabs, teachers, subjectColors) {
   return {
     version: CURRENT_PROJECT_VERSION,
     name: "",
@@ -19,6 +20,7 @@ function createNewProject(tabs, teachers) {
     teachers: teachers || DEFAULT_INITIAL_TEACHERS,
     activeTabId: tabs[0]?.id || 1,
     tabs,
+    subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
   };
 }
 
@@ -394,6 +396,11 @@ export function useProject() {
     pushHistory({ ...project, name });
   }, [project, pushHistory]);
 
+  const updateSubjectColor = useCallback((subject, color) => {
+    const newColors = { ...(project.subjectColors || {}), [subject]: color };
+    pushHistory({ ...project, subjectColors: newColors });
+  }, [project, pushHistory]);
+
   return {
     project,
     setProject,
@@ -442,5 +449,7 @@ export function useProject() {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    // 科目カラー
+    updateSubjectColor,
   };
 }

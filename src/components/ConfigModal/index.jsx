@@ -5,6 +5,7 @@ import TeacherManager from './TeacherManager';
 import ClassPriority from './ClassPriority';
 import ExternalCounts from './ExternalCounts';
 import NgSettings from './NgSettings';
+import SubjectColorSettings from './SubjectColorSettings';
 
 export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
@@ -22,9 +23,12 @@ export default function ConfigModal({ onClose }) {
           <button onClick={() => setConfigTab('classes')} className={`pb-2 font-bold ${configTab === 'classes' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🏫 クラス優先度</button>
           <button onClick={() => setConfigTab('external')} className={`pb-2 font-bold ${configTab === 'external' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>📅 他学年・午前</button>
           <button onClick={() => setConfigTab('ng')} className={`pb-2 font-bold ${configTab === 'ng' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🚫 日時NG</button>
+          <button onClick={() => setConfigTab('colors')} className={`pb-2 font-bold ${configTab === 'colors' ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-500"}`}>🎨 科目カラー</button>
         </div>
         <div className="flex-1 overflow-y-auto p-6">
-          {configTab === 'external' ? (
+          {configTab === 'colors' ? (
+            <SubjectColorSettings />
+          ) : configTab === 'external' ? (
             <ExternalCounts />
           ) : configTab === 'ng' ? (
             <NgSettings />

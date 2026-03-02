@@ -38,12 +38,37 @@ export const LEGACY_STORAGE_KEYS = [
 ];
 
 // --- 科目カラー ---
-export const getSubjectColor = (subject) => {
-  if (!subject) return "bg-white";
-  const colors = ["bg-red-100", "bg-blue-100", "bg-yellow-100", "bg-green-100", "bg-purple-100", "bg-pink-100", "bg-indigo-100", "bg-teal-100", "bg-orange-100", "bg-lime-100"];
+export const DEFAULT_SUBJECT_COLORS = {
+  "英語": "#DBEAFE",  // 青系
+  "数学": "#FEE2E2",  // 赤系
+  "国語": "#FEF3C7",  // 黄系
+  "理科": "#D1FAE5",  // 緑系
+  "社会": "#EDE9FE",  // 紫系
+};
+
+// カラーパレット（設定画面で選択可能な色）
+export const SUBJECT_COLOR_PALETTE = [
+  { label: "青系", value: "#DBEAFE" },
+  { label: "赤系", value: "#FEE2E2" },
+  { label: "黄系", value: "#FEF3C7" },
+  { label: "緑系", value: "#D1FAE5" },
+  { label: "紫系", value: "#EDE9FE" },
+  { label: "ピンク系", value: "#FCE7F3" },
+  { label: "インディゴ系", value: "#E0E7FF" },
+  { label: "ティール系", value: "#CCFBF1" },
+  { label: "オレンジ系", value: "#FFEDD5" },
+  { label: "ライム系", value: "#ECFCCB" },
+];
+
+export const getSubjectColor = (subject, subjectColors) => {
+  if (!subject) return null;
+  if (subjectColors && subjectColors[subject]) return subjectColors[subject];
+  if (DEFAULT_SUBJECT_COLORS[subject]) return DEFAULT_SUBJECT_COLORS[subject];
+  // 未登録科目はハッシュベースでフォールバック
+  const fallbackColors = SUBJECT_COLOR_PALETTE.map(c => c.value);
   let hash = 0;
   for (let i = 0; i < subject.length; i++) hash += subject.charCodeAt(i);
-  return colors[hash % colors.length];
+  return fallbackColors[hash % fallbackColors.length];
 };
 
 // --- 丸数字変換 ---

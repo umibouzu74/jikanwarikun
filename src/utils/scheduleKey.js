@@ -90,20 +90,29 @@ export function migrateScheduleKeys(schedule, config) {
 export function migrateProject(project) {
   if (!project) return project;
 
-  // version が 2 以上なら既に新形式
-  if (project.version >= 2) return project;
+  let result = project;
 
-  const migratedTabs = project.tabs.map(tab => ({
-    ...tab,
-    schedule: migrateScheduleKeys(tab.schedule, tab.config),
-  }));
+  // version が 2 未満なら旧形式からマイグレーション
+  if (!project.version || project.version < 2) {
+    const migratedTabs = project.tabs.map(tab => ({
+      ...tab,
+      schedule: migrateScheduleKeys(tab.schedule, tab.config),
+    }));
 
-  return {
-    ...project,
-    version: 2,
-    name: project.name || "",
-    createdAt: project.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    tabs: migratedTabs,
-  };
+    result = {
+      ...project,
+      version: 2,
+      name: project.name || "",
+      createdAt: project.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      tabs: migratedTabs,
+    };
+  }
+
+  // subjectColors が未設定の場合はデフォルト値を追加
+  if (!result.subjectColors) {
+    result = { ...result, subjectColors: {} };
+  }
+
+  return result;
 }
