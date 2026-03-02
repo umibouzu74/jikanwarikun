@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { makeExternalKey } from '../utils/scheduleKey';
 
 function SummaryTable({ target, teachers }) {
   const totals = {};
@@ -32,14 +33,13 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
           <div className="p-4 bg-indigo-50 border border-indigo-100 rounded">
             <h3 className="font-bold text-indigo-800 mb-2">📊 講師別コマ数 (全タブ合計)</h3>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(analysis.teacherDailyCounts).filter(([k]) => k.startsWith(currentConfig.dates[0])).map(([k]) => {
-                const name = k.split('-')[1];
+              {project.teachers.filter(t => t.name !== "未定").map(t => {
                 let total = 0;
-                currentConfig.dates.forEach(d => { total += analysis.teacherDailyCounts[`${d}-${name}`]?.total || 0; });
+                currentConfig.dates.forEach(d => { total += analysis.teacherDailyCounts[makeExternalKey(d, t.name)]?.total || 0; });
                 if (total === 0) return null;
                 return (
-                  <div key={name} className="bg-white px-2 py-1 rounded border shadow-sm text-sm flex items-center gap-2">
-                    <span className="font-bold">{name}</span>
+                  <div key={t.name} className="bg-white px-2 py-1 rounded border shadow-sm text-sm flex items-center gap-2">
+                    <span className="font-bold">{t.name}</span>
                     <span className="bg-blue-100 text-blue-800 px-1 rounded">{total}</span>
                   </div>
                 );

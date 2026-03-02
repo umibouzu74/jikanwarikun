@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { makeKey } from '../utils/scheduleKey';
 
 export default function ContextMenu({ contextMenu, clipboard, onClose }) {
   const {
@@ -15,7 +16,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
 
   if (!contextMenu) return null;
 
-  const { d, p, c, type, val } = contextMenu;
+  const { dIdx, pIdx, cIdx, type, val } = contextMenu;
 
   const handleAction = (action) => {
     if (action === 'rename') {
@@ -29,17 +30,20 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
       handleBulkAction(action, type, val);
     } else {
       if (action === 'copy') {
-        const copied = handleCellCopy(d, p, c);
+        const copied = handleCellCopy(dIdx, pIdx, cIdx);
         if (copied) onClose(copied);
         return;
       }
-      if (action === 'paste') { handleCellPaste(d, p, c, clipboard); }
-      if (action === 'lock') { toggleLock(d, p, c); }
-      if (action === 'clear') { handleCellClear(d, p, c); }
-      if (action === 'set-ng') { handleSetNg(d, p, c); }
+      if (action === 'paste') { handleCellPaste(dIdx, pIdx, cIdx, clipboard); }
+      if (action === 'lock') { toggleLock(dIdx, pIdx, cIdx); }
+      if (action === 'clear') { handleCellClear(dIdx, pIdx, cIdx); }
+      if (action === 'set-ng') { handleSetNg(dIdx, pIdx, cIdx); }
     }
     onClose();
   };
+
+  const cellKey = (dIdx !== undefined && pIdx !== undefined && cIdx !== undefined)
+    ? makeKey(dIdx, pIdx, cIdx) : null;
 
   return (
     <div className="fixed bg-white border border-gray-200 shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
@@ -55,7 +59,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
         <>
           <button onClick={() => handleAction('copy')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">📝 コピー</button>
           <button onClick={() => handleAction('paste')} className={`block w-full text-left px-4 py-2 border-b ${!clipboard ? "text-gray-300" : "hover:bg-gray-100"}`}>📋 貼り付け</button>
-          {currentSchedule[`${d}-${p}-${c}`]?.teacher && (
+          {cellKey && currentSchedule[cellKey]?.teacher && (
             <button onClick={() => handleAction('set-ng')} className="block w-full text-left px-4 py-2 hover:bg-yellow-100 border-b text-yellow-800">🚫 この時間をNG登録</button>
           )}
           <button onClick={() => handleAction('lock')} className="block w-full text-left px-4 py-2 hover:bg-gray-100 border-b">🔒 ロック切替</button>

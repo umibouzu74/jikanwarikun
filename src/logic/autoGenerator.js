@@ -1,5 +1,6 @@
 // 自動生成ロジック（MRV法 + バックトラッキング）
 // 純粋関数として抽出。UI依存なし。
+import { makeKey, makeNgKey, makeExternalKey } from '../utils/scheduleKey';
 
 export function generateSchedule({ project, activeTabId }) {
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
@@ -10,19 +11,19 @@ export function generateSchedule({ project, activeTabId }) {
   const baseDailyCounts = {};
   project.teachers.forEach(t => {
     currentConfig.dates.forEach(d => {
-      const key = `${d}-${t.name}`;
+      const key = makeExternalKey(d, t.name);
       baseDailyCounts[key] = project.externalCounts?.[key] || 0;
     });
   });
 
   const currentTabFixedCounts = {};
-  currentConfig.dates.forEach(d => {
-    currentConfig.periods.forEach(p => {
-      currentConfig.classes.forEach(c => {
-        const k = `${d}-${p}-${c}`;
+  currentConfig.dates.forEach((d, dIdx) => {
+    currentConfig.periods.forEach((p, pIdx) => {
+      currentConfig.classes.forEach((c, cIdx) => {
+        const k = makeKey(dIdx, pIdx, cIdx);
         const entry = currentSchedule[k];
         if (entry && entry.teacher && entry.teacher !== "未定") {
-          const dayKey = `${d}-${entry.teacher}`;
+          const dayKey = makeExternalKey(d, entry.teacher);
           currentTabFixedCounts[dayKey] = (currentTabFixedCounts[dayKey] || 0) + 1;
         }
       });
@@ -32,27 +33,30 @@ export function generateSchedule({ project, activeTabId }) {
   const solutions = [];
   const slots = [];
   const currentCounts = {};
-  currentConfig.classes.forEach(c => {
-    currentCounts[c] = {};
-    commonSubjects.forEach(s => currentCounts[c][s] = 0);
+  currentConfig.classes.forEach((c, cIdx) => {
+    currentCounts[cIdx] = {};
+    commonSubjects.forEach(s => currentCounts[cIdx][s] = 0);
   });
 
-  Object.keys(currentSchedule).forEach(k => {
-    const e = currentSchedule[k];
-    if (e?.subject) {
-      const parts = k.split('-');
-      if (parts.length >= 3) {
-        const cls = parts[2];
-        if (currentCounts[cls]) currentCounts[cls][e.subject] = (currentCounts[cls][e.subject] || 0) + 1;
-      }
-    }
+  // 既存の科目カウントを集計
+  currentConfig.dates.forEach((d, dIdx) => {
+    currentConfig.periods.forEach((p, pIdx) => {
+      currentConfig.classes.forEach((c, cIdx) => {
+        const k = makeKey(dIdx, pIdx, cIdx);
+        const e = currentSchedule[k];
+        if (e?.subject) {
+          if (currentCounts[cIdx]) currentCounts[cIdx][e.subject] = (currentCounts[cIdx][e.subject] || 0) + 1;
+        }
+      });
+    });
   });
 
-  currentConfig.dates.forEach(d => currentConfig.periods.forEach(p => currentConfig.classes.forEach(c => {
-    const k = `${d}-${p}-${c}`;
+  // 未充填スロットを構築
+  currentConfig.dates.forEach((d, dIdx) => currentConfig.periods.forEach((p, pIdx) => currentConfig.classes.forEach((c, cIdx) => {
+    const k = makeKey(dIdx, pIdx, cIdx);
     const entry = currentSchedule[k];
     if (!entry || !entry.subject || !entry.teacher) {
-      slots.push({ d, p, c, k, fixedSubject: entry?.subject });
+      slots.push({ dIdx, pIdx, cIdx, d, p, c, k, fixedSubject: entry?.subject });
     }
   })));
 
@@ -63,7 +67,7 @@ export function generateSchedule({ project, activeTabId }) {
     subjectsToCheck.forEach(subj => {
       project.teachers.forEach(t => {
         if (t.subjects.includes(subj) &&
-          !t.ngSlots?.includes(`${slot.d}-${slot.p}`) &&
+          !t.ngSlots?.includes(makeNgKey(slot.d, slot.p)) &&
           !t.ngClasses?.includes(slot.c)) {
           validCandidates++;
         }
@@ -81,16 +85,17 @@ export function generateSchedule({ project, activeTabId }) {
     if (iter.c++ > 500000 || solutions.length >= 1) return;
     if (idx >= slots.length) { solutions.push(JSON.parse(JSON.stringify(tempSch))); return; }
 
-    const { d, p, c, k, fixedSubject } = slots[idx];
+    const { dIdx, pIdx, cIdx, d, p, c, k, fixedSubject } = slots[idx];
     const subjectsToTry = fixedSubject ? [fixedSubject] : commonSubjects.sort(() => Math.random() - 0.5);
 
     for (const s of subjectsToTry) {
-      if (!fixedSubject && (tempCnt[c][s] || 0) >= currentConfig.subjectCounts[s]) continue;
-      if (!fixedSubject && currentConfig.periods.some(per => tempSch[`${d}-${per}-${c}`]?.subject === s)) continue;
+      if (!fixedSubject && (tempCnt[cIdx][s] || 0) >= currentConfig.subjectCounts[s]) continue;
+      // 同日・同クラスに同じ科目があるかチェック
+      if (!fixedSubject && currentConfig.periods.some((per, pi) => tempSch[makeKey(dIdx, pi, cIdx)]?.subject === s)) continue;
 
       const validT = project.teachers.filter(t =>
         t.subjects.includes(s) &&
-        !t.ngSlots?.includes(`${d}-${p}`) &&
+        !t.ngSlots?.includes(makeNgKey(d, p)) &&
         !t.ngClasses?.includes(c)
       );
 
@@ -108,19 +113,20 @@ export function generateSchedule({ project, activeTabId }) {
 
       for (const tObj of shuffledT) {
         const tName = tObj.name;
-        const dayKey = `${d}-${tName}`;
+        const dayKey = makeExternalKey(d, tName);
 
-        if (currentConfig.classes.some(oc => oc !== c && tempSch[`${d}-${p}-${oc}`]?.teacher === tName)) continue;
+        // 同じ日付・時限で他クラスに同じ講師がいるかチェック（ダブルブッキング防止）
+        if (currentConfig.classes.some((oc, oci) => oci !== cIdx && tempSch[makeKey(dIdx, pIdx, oci)]?.teacher === tName)) continue;
 
         tempSch[k] = { subject: s, teacher: tName };
-        if (!fixedSubject) tempCnt[c][s]++;
+        if (!fixedSubject) tempCnt[cIdx][s]++;
         if (!tempDaily[dayKey]) tempDaily[dayKey] = 0; tempDaily[dayKey]++;
 
         solve(idx + 1, tempSch, tempCnt, tempDaily, iter);
         if (solutions.length >= 1) return;
 
         if (fixedSubject) tempSch[k] = { subject: fixedSubject, teacher: "" };
-        else { delete tempSch[k]; tempCnt[c][s]--; }
+        else { delete tempSch[k]; tempCnt[cIdx][s]--; }
         tempDaily[dayKey]--;
       }
     }

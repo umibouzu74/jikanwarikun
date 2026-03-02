@@ -57,7 +57,6 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
                   {currentConfig.classes.map((c, cIdx) => (
                     <ScheduleCell
                       key={c}
-                      d={d} p={p} c={c}
                       dIdx={dIdx} pIdx={pIdx} cIdx={cIdx}
                       isCompact={isCompact}
                       onContextMenu={onContextMenu}

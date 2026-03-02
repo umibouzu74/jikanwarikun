@@ -47,17 +47,23 @@ export const toCircleNum = (num) => {
   return circles[num] || `(${num})`;
 };
 
+// --- プロジェクトバージョン ---
+export const CURRENT_PROJECT_VERSION = 2;
+
 // --- スケジュールのクリーンアップ ---
 export const cleanSchedule = (proj) => {
   const newTabs = proj.tabs.map(tab => {
     const newSch = {};
-    tab.config.dates.forEach(d => {
-      tab.config.periods.forEach(p => {
-        tab.config.classes.forEach(c => {
-          const k = `${d}-${p}-${c}`;
-          if (tab.schedule[k]) newSch[k] = tab.schedule[k];
+    const validKeys = new Set();
+    tab.config.dates.forEach((_, dIdx) => {
+      tab.config.periods.forEach((_, pIdx) => {
+        tab.config.classes.forEach((_, cIdx) => {
+          validKeys.add(`d${dIdx}-p${pIdx}-c${cIdx}`);
         });
       });
+    });
+    Object.keys(tab.schedule).forEach(k => {
+      if (validKeys.has(k)) newSch[k] = tab.schedule[k];
     });
     return { ...tab, schedule: newSch };
   });

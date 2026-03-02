@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
+import { makeExternalKey } from '../../utils/scheduleKey';
 
 export default function ExternalCounts() {
   const {
@@ -31,7 +32,7 @@ export default function ExternalCounts() {
                     type="number"
                     min="0"
                     className="w-full h-full p-2 text-center focus:bg-blue-50 focus:outline-none"
-                    value={project.externalCounts?.[`${d}-${t.name}`] || ""}
+                    value={project.externalCounts?.[makeExternalKey(d, t.name)] || ""}
                     placeholder="-"
                     onChange={(e) => handleExternalCountChange(d, t.name, e.target.value)}
                   />
