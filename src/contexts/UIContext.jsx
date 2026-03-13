@@ -115,9 +115,13 @@ export function UIProvider({ children }) {
   const inputResolveRef = useRef(null);
   const toastIdRef = useRef(0);
 
+  const MAX_TOASTS = 5;
   const showToast = useCallback((message, type = 'success', duration = 3000) => {
     const id = ++toastIdRef.current;
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => {
+      const next = [...prev, { id, message, type }];
+      return next.length > MAX_TOASTS ? next.slice(-MAX_TOASTS) : next;
+    });
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, duration);

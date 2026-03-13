@@ -50,10 +50,10 @@ export default function Header() {
         <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">{saveStatus}</span>
       </div>
       <div className="flex gap-2">
-        <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold">💾 プロジェクト保存</button>
-        <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold">📂 開く</button>
-        <button onClick={() => downloadScheduleExcel(project)} className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold">📊 全Excel</button>
-        <button onClick={() => downloadTeacherExcel(project)} className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold">👤 個人Excel</button>
+        <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>
+        <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 shadow text-sm font-bold" title="JSONファイルからプロジェクトを開く">📂 開く</button>
+        <button onClick={() => { try { downloadScheduleExcel(project); showToast("全体Excelをダウンロードしました"); } catch { showToast("Excel出力に失敗しました", "error"); } }} className="flex items-center gap-1 px-3 py-1.5 bg-green-800 text-white rounded hover:bg-green-900 shadow text-sm font-bold" title="全タブのスケジュールをExcel出力">📊 全Excel</button>
+        <button onClick={() => { try { downloadTeacherExcel(project); showToast("個人別Excelをダウンロードしました"); } catch { showToast("Excel出力に失敗しました", "error"); } }} className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 shadow text-sm font-bold" title="講師別スケジュールをExcel出力">👤 個人Excel</button>
         <input type="file" accept=".json" ref={fileInputRef} onChange={(e) => handleLoadJson(e, showToast, showConfirm)} className="hidden" />
       </div>
     </div>

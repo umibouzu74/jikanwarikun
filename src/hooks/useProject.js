@@ -57,6 +57,7 @@ function createNewProject(tabs, teachers, subjectColors, subjects) {
     subjects: subjects || [...DEFAULT_SUBJECTS],
     subjectColors: subjectColors || { ...DEFAULT_SUBJECT_COLORS },
     combinedGroups: [],
+    externalCounts: {},
   };
 }
 
@@ -559,7 +560,7 @@ export function useProject() {
   }, [project, currentSchedule, pushHistory]);
 
   const handleExternalCountChange = useCallback((date, teacherName, v) => {
-    const counts = { ...project.externalCounts, [makeExternalKey(date, teacherName)]: parseInt(v) || 0 };
+    const counts = { ...(project.externalCounts || {}), [makeExternalKey(date, teacherName)]: parseInt(v) || 0 };
     pushHistory({ ...project, externalCounts: counts });
   }, [project, pushHistory]);
 

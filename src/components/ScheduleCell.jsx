@@ -3,7 +3,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { getSubjectColor, toCircleNum } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, isPrimaryCombinedClass } from '../utils/scheduleKey';
 
-export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMenu, onDragStart, onDrop }) {
+export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource }) {
   const {
     project,
     currentSchedule,
@@ -59,11 +59,13 @@ export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMen
   return (
     <td
       id={`select-${dIdx}-${pIdx}-${cIdx}-cell`}
-      className={`border-r last:border-0 ${isCompact ? "p-px" : "p-2"}`}
+      className={`border-r last:border-0 ${isCompact ? "p-px" : "p-2"} ${isDragOver && !isLocked ? "ring-2 ring-blue-400 ring-inset bg-blue-50" : ""} ${isDragOver && isLocked ? "ring-2 ring-red-300 ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""}`}
       draggable={!isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => onDragOver(e, key, entry)}
+      onDragLeave={onDragLeave}
       onDrop={(e) => onDrop(e, key, entry)}
+      onDragEnd={onDragEnd}
       onContextMenu={(e) => onContextMenu(e, dIdx, pIdx, cIdx)}
     >
       <div className={`flex flex-col rounded h-full ${lockedStyle} ${isCompact ? "gap-0 p-0.5" : "gap-1 p-1.5"}`} style={cellStyle}>
@@ -87,7 +89,7 @@ export default function ScheduleCell({ dIdx, pIdx, cIdx, isCompact, onContextMen
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-red-600" : "text-gray-700"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
             {isCombined && <span className={`bg-purple-600 text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
-          <button onClick={() => toggleLock(dIdx, pIdx, cIdx)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`}>
+          <button onClick={() => toggleLock(dIdx, pIdx, cIdx)} className={`focus:outline-none text-gray-400 hover:text-gray-800 shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
             {isLocked ? "🔒" : "🔓"}
           </button>
         </div>

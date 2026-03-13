@@ -14,7 +14,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     handleSetNg,
     toggleLock,
   } = useProjectContext();
-  const { showInput } = useUI();
+  const { showInput, showToast } = useUI();
 
   if (!contextMenu) return null;
 
@@ -33,7 +33,10 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     } else {
       if (action === 'copy') {
         const copied = handleCellCopy(dIdx, pIdx, cIdx);
-        if (copied) onClose(copied);
+        if (copied) {
+          onClose(copied);
+          showToast(`${copied.subject}${copied.teacher ? ` / ${copied.teacher}` : ''} をコピーしました`, 'success', 1500);
+        }
         return;
       }
       if (action === 'paste') { handleCellPaste(dIdx, pIdx, cIdx, clipboard); }

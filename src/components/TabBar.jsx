@@ -42,7 +42,8 @@ export default function TabBar() {
           {project.tabs.length > 1 && (
             <span
               onClick={(e) => handleDeleteClick(e, tab.id)}
-              className="text-xs ml-2 hover:text-red-500"
+              className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors cursor-pointer"
+              title="このタブを削除"
             >×</span>
           )}
         </div>
@@ -50,6 +51,7 @@ export default function TabBar() {
       <button
         onClick={handleAddClick}
         className="px-3 py-2 text-gray-500 hover:text-blue-600 font-bold text-sm"
+        title="新しい学年タブを追加"
       >+ タブ追加</button>
     </div>
   );

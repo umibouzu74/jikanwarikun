@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { useUI } from '../contexts/uiContextValue';
 import { makeExternalKey, countTeacherHoursWithCombined } from '../utils/scheduleKey';
 
 function SummaryTable({ target, config, combinedGroups }) {
@@ -25,6 +26,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
     currentConfig,
     applyPattern,
   } = useProjectContext();
+  const { showToast } = useUI();
 
   return (
     <>
@@ -77,7 +79,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   )}
                 </div>
                 <SummaryTable target={pat.schedule} config={currentConfig} combinedGroups={project.combinedGroups || []} />
-                <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
+                <button onClick={() => { applyPattern(pat.schedule); setGeneratedPatterns([]); showToast(`案 ${i + 1} を適用しました`); }} className={`w-full mt-2 py-1 text-white rounded text-sm font-bold ${pat.isPartial ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-purple-600 hover:bg-purple-700'}`}>
                   この案を採用
                 </button>
               </div>
