@@ -46,8 +46,7 @@ export default function CombinedGroupSettings() {
   const toggleDate = (dates, date) => {
     if (!dates) return [date];
     if (dates.includes(date)) {
-      const newDates = dates.filter(d => d !== date);
-      return newDates.length === 0 ? null : newDates;
+      return dates.filter(d => d !== date);
     }
     return [...dates, date];
   };

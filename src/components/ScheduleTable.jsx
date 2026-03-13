@@ -11,6 +11,7 @@ const COL_WIDTHS = {
 export default function ScheduleTable({ isCompact, onContextMenu }) {
   const { currentConfig, handleSwapCells } = useProjectContext();
   const [dragSource, setDragSource] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
 
   const handleDragStart = (e, k, d) => {
     if (d.locked || !d.subject) { e.preventDefault(); return; }
@@ -19,12 +20,33 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
     e.target.style.opacity = '0.5';
   };
 
+  const handleDragOver = (e, tk, td) => {
+    e.preventDefault();
+    if (!dragSource || dragSource.key === tk || td.locked) {
+      e.dataTransfer.dropEffect = "none";
+    } else {
+      e.dataTransfer.dropEffect = "move";
+    }
+    setDragOverKey(tk);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverKey(null);
+  };
+
   const handleDrop = (e, tk, td) => {
     e.preventDefault();
+    setDragOverKey(null);
     if (!dragSource || dragSource.key === tk || td.locked) return;
     handleSwapCells(dragSource.key, dragSource.data, tk, td);
     setDragSource(null);
     e.target.style.opacity = '1';
+  };
+
+  const handleDragEnd = (e) => {
+    e.target.style.opacity = '1';
+    setDragSource(null);
+    setDragOverKey(null);
   };
 
   const widths = isCompact ? COL_WIDTHS.compact : COL_WIDTHS.normal;
@@ -78,7 +100,12 @@ export default function ScheduleTable({ isCompact, onContextMenu }) {
                       isCompact={isCompact}
                       onContextMenu={onContextMenu}
                       onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
                       onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      isDragOver={dragOverKey !== null && dragOverKey === `d${dIdx}-p${pIdx}-c${cIdx}`}
+                      isDragSource={dragSource !== null && dragSource.key === `d${dIdx}-p${pIdx}-c${cIdx}`}
                     />
                   ))}
                 </tr>
