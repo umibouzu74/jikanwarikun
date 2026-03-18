@@ -15,12 +15,34 @@ import ConfigModal from './components/ConfigModal';
 const NUM_PATTERNS = 3;
 
 function ScheduleApp() {
-  const { project } = useProjectContext();
+  const { project, undo, redo } = useProjectContext();
   const { showToast } = useUI();
 
   useEffect(() => {
     document.title = project.name ? `${project.name} - 時間割作成くん` : "時間割作成くん";
   }, [project.name]);
+
+  // Ctrl+Z / Ctrl+Shift+Z キーボードショートカット
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // input, select, textarea 内では無効化
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) {
+        e.preventDefault();
+        redo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
 
   const [showConfig, setShowConfig] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
