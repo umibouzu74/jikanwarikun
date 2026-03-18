@@ -122,6 +122,10 @@ export function useProject() {
   const fileInputRef = useRef(null);
   const saveTimerRef = useRef(null);
   const isInitialMount = useRef(true);
+  const historyRef = useRef(history);
+  const historyIndexRef = useRef(historyIndex);
+  historyRef.current = history;
+  historyIndexRef.current = historyIndex;
 
   // localStorage 自動保存
   useEffect(() => {
@@ -130,7 +134,6 @@ export function useProject() {
       return;
     }
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(project));
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 保存ステータス表示のため意図的に使用
     setSaveStatus("💾 保存中...");
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => setSaveStatus("✅ 保存済"), 800);
@@ -139,28 +142,37 @@ export function useProject() {
   const pushHistory = useCallback((newProject) => {
     const updated = { ...newProject, updatedAt: new Date().toISOString() };
     setHistory(prev => {
-      const newHistory = prev.slice(0, historyIndex + 1);
+      const idx = historyIndexRef.current;
+      const newHistory = prev.slice(0, idx + 1);
       newHistory.push(updated);
       if (newHistory.length > 50) newHistory.shift();
-      setHistoryIndex(newHistory.length - 1);
+      const newIdx = newHistory.length - 1;
+      setHistoryIndex(newIdx);
+      historyIndexRef.current = newIdx;
       return newHistory;
     });
     setProject(updated);
-  }, [historyIndex]);
+  }, []);
 
   const undo = useCallback(() => {
-    if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setProject(history[historyIndex - 1]);
+    const idx = historyIndexRef.current;
+    const hist = historyRef.current;
+    if (idx > 0) {
+      setHistoryIndex(idx - 1);
+      historyIndexRef.current = idx - 1;
+      setProject(hist[idx - 1]);
     }
-  }, [historyIndex, history]);
+  }, []);
 
   const redo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setProject(history[historyIndex + 1]);
+    const idx = historyIndexRef.current;
+    const hist = historyRef.current;
+    if (idx < hist.length - 1) {
+      setHistoryIndex(idx + 1);
+      historyIndexRef.current = idx + 1;
+      setProject(hist[idx + 1]);
     }
-  }, [historyIndex, history]);
+  }, []);
 
   // 派生データ
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];

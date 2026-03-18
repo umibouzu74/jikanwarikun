@@ -14,6 +14,14 @@ export default function ConfigModal({ onClose }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName } = useProjectContext();
   const { showConfirm } = useUI();
+  const [projectNameInput, setProjectNameInput] = useState(project.name || "");
+
+  const handleProjectNameBlur = () => {
+    const trimmed = projectNameInput.trim();
+    if (trimmed !== (project.name || "")) {
+      updateProjectName(trimmed);
+    }
+  };
 
   const handleResetClick = async () => {
     const ok = await showConfirm("全データを削除しますか？\nこの操作は元に戻せません。", { title: "データリセット", danger: true, confirmLabel: "全削除" });
@@ -55,8 +63,10 @@ export default function ConfigModal({ onClose }) {
                 <label className="block text-sm font-bold text-gray-700 mb-1">プロジェクト名</label>
                 <input
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                  value={project.name || ""}
-                  onChange={(e) => updateProjectName(e.target.value)}
+                  value={projectNameInput}
+                  onChange={(e) => setProjectNameInput(e.target.value)}
+                  onBlur={handleProjectNameBlur}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                   placeholder="例: 2026年度 冬期講習"
                 />
                 {project.createdAt && (

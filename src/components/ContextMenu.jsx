@@ -1,9 +1,30 @@
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeKey } from '../utils/scheduleKey';
 
 export default function ContextMenu({ contextMenu, clipboard, onClose }) {
+  const menuRef = useRef(null);
+
+  // スクロール時にメニューを閉じる
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleScroll = () => onClose();
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, [contextMenu, onClose]);
+
+  // メニュー位置を画面内にクランプ（DOM更新後に即座に調整）
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!contextMenu || !el) return;
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(8, Math.min(contextMenu.x, window.innerWidth - rect.width - 8));
+    const y = Math.max(8, Math.min(contextMenu.y, window.innerHeight - rect.height - 8));
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }, [contextMenu]);
+
   const {
     currentSchedule,
     handleRenameHeader,
@@ -51,7 +72,7 @@ export default function ContextMenu({ contextMenu, clipboard, onClose }) {
     ? makeKey(dIdx, pIdx, cIdx) : null;
 
   return (
-    <div className="fixed bg-white border border-gray-200 shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
+    <div ref={menuRef} className="fixed bg-white border border-gray-200 shadow-xl rounded z-50 text-sm overflow-hidden animate-fade-in" style={{ top: contextMenu.y, left: contextMenu.x }}>
       {type ? (
         <>
           <div className="px-4 py-2 bg-gray-50 border-b font-bold text-gray-500 text-xs">{val} の一括操作</div>
